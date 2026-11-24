@@ -39,7 +39,7 @@ Change the token if it may have leaked, or whenever you like.
 
 ### Turn the Bot Off
 
-Remove `ARCHIVIST_SERVICE_TOKEN` from Archivist's `.env` and restart Archivist. The website keeps working, and the bot's Archivist commands report that Archivist refused them. To turn the commands off in Discord as well, remove `archivist` from the bot's `MODULES`, or leave its `ARCHIVIST_GUILD_IDS` empty.
+Remove `ARCHIVIST_SERVICE_TOKEN` from Archivist's `.env` and restart Archivist. The website keeps working, and the bot's Archivist commands report that Archivist refused them. To turn the commands off in Discord as well, remove `archivist` from the bot's `MODULES`, or remove every server with `/archivist-admin server remove`.
 
 ## Choosing the Address
 
@@ -83,6 +83,6 @@ Browsers still use `ARCHIVIST_BASE_URL`, such as `http://localhost:3000`. Run `d
 ## What Changes for Contributors
 
 * The website is the main place to contribute and research. Owners whitelist contributors with `/archivist-admin whitelist add`, and those contributors sign in to the website with Discord.
-* The bot's contributor commands are `/archive` and its alias `/a`. They work only in the servers in the bot's `ARCHIVIST_GUILD_IDS`, and only for archives the contributor is whitelisted for.
+* The bot's contributor commands are `/archive` and its alias `/a`. They work only in the servers owners add with `/archivist-admin server add`, and only for archives the contributor is whitelisted for. The bot keeps that server list in its own database. The whitelists stay here, because the website checks them at sign-in.
 * New artifacts from either place are announced in the archive's logs channel. Set it with `/set-artifact-logs-channel` in Discord, where the bot can check its permissions. When the bot is offline, announcements wait and are posted when it returns.
 * When Archivist is down, the bot's Archivist commands say so and change nothing. The rest of the bot keeps working.

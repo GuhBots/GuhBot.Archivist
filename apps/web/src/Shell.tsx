@@ -334,7 +334,13 @@ function AccountMenu(props: { onClose(): void }) {
   return (
     <div ref={box} className="popover account-menu" role="dialog" aria-label="Your account">
       <strong>{me.user.name ?? "Signed in"}</strong>
-      <span className="hint">{me.isOwner ? "Bot owner" : "Archive member"}</span>
+      <span className="hint">
+        {me.via === "local"
+          ? "Local viewer. Archives open read-only, and preferences last until it stops."
+          : me.isOwner
+            ? "Owner"
+            : "Archive member"}
+      </span>
       <label className="field">
         <span>All-number dates such as 03/04/2019</span>
         <select
@@ -378,16 +384,18 @@ function AccountMenu(props: { onClose(): void }) {
       >
         Reset both
       </button>
-      <button
-        className="btn danger"
-        type="button"
-        onClick={async () => {
-          await api("/auth/logout", { method: "POST" });
-          window.location.href = `${BASE}/`;
-        }}
-      >
-        Sign out
-      </button>
+      {me.via === "session" && (
+        <button
+          className="btn danger"
+          type="button"
+          onClick={async () => {
+            await api("/auth/logout", { method: "POST" });
+            window.location.href = `${BASE}/`;
+          }}
+        >
+          Sign out
+        </button>
+      )}
     </div>
   );
 }

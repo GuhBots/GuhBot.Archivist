@@ -17,7 +17,7 @@ type Result =
   | {
       status: "created";
       artifact: ArtifactDetails;
-      announcement: { status: string; reason?: string };
+      announcement: { status: string };
     }
   | {
       status: "duplicate";
@@ -77,10 +77,10 @@ export function AddArtifactModal(props: { characters?: Picked[] }) {
         form,
       });
       if (result.status === "created") {
-        const posted =
-          result.announcement.status === "failed" || result.announcement.status === "indeterminate";
+        // The Discord bot posts announcements from a queue, so a new one is only queued here.
+        const queued = result.announcement.status === "queued";
         toast(
-          `Saved artifact ${shortId(result.artifact.id)}.${posted ? ` Not announced: ${result.announcement.reason ?? "the logs channel failed"}.` : ""}`,
+          `Saved artifact ${shortId(result.artifact.id)}.${queued ? " The bot will announce it in the logs channel." : ""}`,
         );
         changed();
         windows.openArtifact(result.artifact.id);

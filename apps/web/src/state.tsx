@@ -5,7 +5,9 @@ import type { ArchiveDetails, QueryValue } from "./api.js";
 export interface Me {
   user: { id: string; name: string | null; avatarUrl: string | null };
   isOwner: boolean;
-  sessionExpires: string;
+  /** `session` in a browser signed in with Discord, `local` in the read-only local viewer. */
+  via: "session" | "service" | "local";
+  sessionExpires: string | null;
   preferences: { timeZone: string | null; dateOrder: "ymd" | "mdy" | "dmy" };
 }
 

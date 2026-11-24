@@ -1,6 +1,6 @@
 // Shared development environment. See README.md in this directory.
 {
-    "name": "Development",
+    "name": "GuhBot.Archivist",
     "build": {
         "dockerfile": "../Dockerfile",
         "context": "..",
@@ -8,10 +8,12 @@
     },
     "remoteUser": "dev",
     "postCreateCommand": "sh .devcontainer/post-create.sh",
+    // The service listens here in development, as npm start does.
+    "forwardPorts": [3000],
     // Editor settings are optional. The container works the same from a shell.
     "customizations": {
         "vscode": {
-            "extensions": ["editorconfig.editorconfig"]
+            "extensions": ["editorconfig.editorconfig", "esbenp.prettier-vscode"]
         }
     }
 }

@@ -19,7 +19,7 @@ type Archives = { archiveId: string; name: string }[];
 /** Signs the contributor in, picks an archive, and shows it. */
 export function App() {
   const route = parseRoute(usePath());
-  const [me, setMe] = useState<Me | "signed-out" | null>(null);
+  const [me, setMe] = useState<Me | "signed-out" | "not-admitted" | null>(null);
   const [archives, setArchives] = useState<Archives | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
 
@@ -28,17 +28,19 @@ export function App() {
       .then(setMe)
       .catch((error: unknown) => {
         if (error instanceof ApiError && error.code === "no_session") setMe("signed-out");
+        else if (notAdmitted(error)) setMe("not-admitted");
         else setFailure(error instanceof Error ? error.message : String(error));
       });
   }, []);
 
   useEffect(() => {
-    if (!me || me === "signed-out") return;
+    if (!me || me === "signed-out" || me === "not-admitted") return;
     api<{ archives: Archives }>("/api/archives")
       .then((data) => setArchives(data.archives))
-      .catch((error: unknown) =>
-        setFailure(error instanceof Error ? error.message : String(error)),
-      );
+      .catch((error: unknown) => {
+        if (notAdmitted(error)) setMe("not-admitted");
+        else setFailure(error instanceof Error ? error.message : String(error));
+      });
   }, [me]);
 
   // The home page opens the archive used last in this browser, or the first one.
@@ -50,6 +52,22 @@ export function App() {
   }, [route.kind, archives]);
 
   if (failure) return <Message title="Archivist could not load">{failure}</Message>;
+  if (me === "not-admitted") {
+    return (
+      <div className="signin">
+        <main>
+          <h1>No access yet</h1>
+          <p>
+            Your Discord account is not on any archive's whitelist. Ask the archive's owner to add
+            you, then sign in again.
+          </p>
+          <a className="btn primary" href={signInUrl}>
+            Sign in again
+          </a>
+        </main>
+      </div>
+    );
+  }
   if (me === "signed-out") {
     return (
       <div className="signin">
@@ -73,7 +91,7 @@ export function App() {
     return (
       <Message title="No archives yet">
         You are signed in as {me.user.name ?? me.user.id}, but you are not on any archive's
-        whitelist. Ask the bot owner to add you.
+        whitelist. Ask the archive's owner to add you.
       </Message>
     );
   }
@@ -86,6 +104,13 @@ export function App() {
       me={me}
       setMe={setMe}
     />
+  );
+}
+
+/** The service ends a session whose user is no longer an owner or on any whitelist. */
+function notAdmitted(error: unknown): boolean {
+  return (
+    error instanceof ApiError && error.status === 403 && error.details.reason === "not_admitted"
   );
 }
 

@@ -2,7 +2,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import Database from "better-sqlite3";
 import type { FastifyInstance } from "fastify";
-import { queueAnnouncement, settleExpiredClaims } from "../archivist/announcements.js";
+import { settleExpiredClaims } from "../archivist/announcements.js";
 import {
   type ArchivistContext,
   closeArchivistContext,
@@ -60,12 +60,10 @@ export function buildServiceApp(options: ServiceAppOptions): FastifyInstance {
     context,
     settings: config.web,
     isOwner: async (userId) => config.ownerIds.has(userId),
+    // The owner list is in memory, so every request sees the configured owners.
+    ownerRecheckMs: 0,
     identify: service.identify,
     hasServiceCredential: service.hasCredential,
-    // The bot posts announcements. The service queues them for it to claim.
-    announce: async (archiveId, artifact) => ({
-      status: queueAnnouncement(context, { archiveId, artifactId: artifact.id }),
-    }),
     frontendRoot: config.frontendRoot,
     driveApiKey: config.driveApiKey,
     logError,
@@ -142,11 +140,6 @@ export async function serve(options: ServeOptions): Promise<RunningService> {
     throw error;
   }
 
-  if (config.ownerIds.size === 0) {
-    log.warn(
-      "Archivist: ARCHIVIST_OWNER_IDS is empty, so nobody can create archives or manage whitelists.",
-    );
-  }
   if (config.serviceToken === null) {
     log.warn(
       "Archivist: ARCHIVIST_SERVICE_TOKEN is not set, so the Discord bot cannot use the API.",

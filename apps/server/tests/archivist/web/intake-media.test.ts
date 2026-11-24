@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, test, type TestContext } from "node:test";
+import { setAnnouncementChannel } from "../../../src/archivist/announcements.js";
 import { createArchive } from "../../../src/archivist/archives.js";
 import type { ArtifactDetails } from "../../../src/archivist/artifacts.js";
 import {
@@ -54,30 +55,46 @@ function fakeDrive(bytes: Buffer): { fetch: typeof fetch; downloads: () => numbe
   return { fetch: fakeFetch, downloads: () => downloads };
 }
 
-async function setup(t: TestContext, overrides: WebOverrides = {}) {
-  const announced: string[] = [];
-  const h = await webHarness(t, WEB_SETTINGS, {
-    announce: async (_archiveId, artifact) => {
-      announced.push(artifact.id);
-      return { status: "sent" };
-    },
-    ...overrides,
-  });
+async function setup(
+  t: TestContext,
+  overrides: WebOverrides = {},
+  { logsChannel = true }: { logsChannel?: boolean } = {},
+) {
+  const h = await webHarness(t, WEB_SETTINGS, overrides);
   const { archiveId } = createArchive(h.context, OWNER, { name: "Hangout" });
   addMember(h.context, OWNER, { archiveId, userId: MEMBER.userId });
+  // OTHER belongs to another archive, so the website admits them but this archive stays hidden.
+  h.admitElsewhere(OTHER.userId);
+  // A logs channel, so new artifacts are queued for the bot to announce.
+  if (logsChannel) {
+    setAnnouncementChannel(h.context, MEMBER, {
+      archiveId,
+      guildId: "727573539904815224",
+      channelId: "900000000000000111",
+    });
+  }
+  /** Artifacts waiting for the bot to announce them. */
+  const announced = () =>
+    (
+      h.context.botDb
+        .prepare("SELECT artifact_id AS id FROM archivist_announcement_queue ORDER BY queued_at")
+        .all() as { id: string }[]
+    ).map((row) => row.id);
   const sam = createCharacter(h.context, MEMBER, { archiveId, knownName: "Sam" });
   const cookie = h.cookie(MEMBER);
-  /** Sends a form as a browser would, fields before the file. */
+  /** Sends a form as a browser would, fields before the file, then any trailing fields. */
   const upload = async (
     fields: Record<string, string | string[]>,
     file?: { name: string; bytes: Buffer },
     who = cookie,
+    trailingFields: Record<string, string> = {},
   ) => {
     const form = new FormData();
     for (const [name, value] of Object.entries(fields)) {
       for (const item of Array.isArray(value) ? value : [value]) form.append(name, item);
     }
     if (file) form.append("file", new Blob([file.bytes]), file.name);
+    for (const [name, value] of Object.entries(trailingFields)) form.append(name, value);
     const encoded = new Request("http://localhost/", { method: "POST", body: form });
     const response = await h.app.inject({
       method: "POST",
@@ -114,8 +131,8 @@ test("an upload from the website becomes an announced artifact, and its media st
   assert.equal(made.status, 201, JSON.stringify(made.body));
   const artifact = made.body.artifact as ArtifactDetails;
   assert.equal(made.body.status, "created");
-  assert.deepEqual(made.body.announcement, { status: "sent" });
-  assert.deepEqual(announced, [artifact.id]);
+  assert.deepEqual(made.body.announcement, { status: "queued" });
+  assert.deepEqual(announced(), [artifact.id]);
   assert.equal(artifact.source.provider, "web_upload");
   assert.deepEqual(artifact.links.characters, [sam.id]);
   assert.equal(artifact.media.originalFilename, "meetup.png");
@@ -159,7 +176,7 @@ test("an upload from the website becomes an announced artifact, and its media st
 });
 
 test("uploads are checked before the file is kept, and a time without a zone must be confirmed", async (t) => {
-  const { h, upload, staging, announced } = await setup(t);
+  const { h, cookie, upload, staging, announced } = await setup(t);
   const bytes = await pngBytes(t);
   const file = { name: "a.png", bytes };
 
@@ -177,8 +194,22 @@ test("uploads are checked before the file is kept, and a time without a zone mus
   );
   assert.equal(unconfirmed.status, 400);
   assert.equal(unconfirmed.body.details.reason, "zone_unconfirmed");
+  // A field after the file could not be checked before the file was kept, so it is refused.
+  const late = await upload({ description: "Late field" }, file, cookie, {
+    exactDate: "2019-08-03",
+  });
+  assert.equal(late.status, 400);
+  assert.equal(late.body.code, "invalid_input");
+  assert.equal(late.body.details.field, "exactDate");
+  // Only the Discord bot may mark an upload as a Discord attachment.
+  const claimed = await upload(
+    { description: "Mine", discordAttachmentId: "900000000000000001" },
+    file,
+  );
+  assert.equal(claimed.status, 403);
+  assert.equal(claimed.body.details.field, "discordAttachmentId");
   assert.equal(staging(), 0);
-  assert.deepEqual(announced, []);
+  assert.deepEqual(announced(), []);
 
   const confirmed = await upload(
     { description: "Late night", exactDate: "2019-07-15 6:30pm", zoneConfirmed: "true" },
@@ -223,7 +254,7 @@ test("a Drive link already in the archive opens a review that only its contribut
     "description",
   ]);
   assert.equal(drive.downloads(), 1, "the file is not downloaded again");
-  assert.deepEqual(announced, [original.id], "a duplicate is not announced");
+  assert.deepEqual(announced(), [original.id], "a duplicate is not announced");
 
   const apply = (token: string, who: string) =>
     h.app.inject({
@@ -250,12 +281,16 @@ test("a Drive link already in the archive opens a review that only its contribut
 
 test("the logs channel is set through the bot's channel check, or refused without the bot", async (t) => {
   const checks: string[] = [];
-  const { h, archiveId } = await setup(t, {
-    checkAnnouncementChannel: async (userId, channelId) => {
-      checks.push(`${userId}:${channelId}`);
-      return { guildId: "727573539904815224" };
+  const { h, archiveId } = await setup(
+    t,
+    {
+      checkAnnouncementChannel: async (userId, channelId) => {
+        checks.push(`${userId}:${channelId}`);
+        return { guildId: "727573539904815224" };
+      },
     },
-  });
+    { logsChannel: false },
+  );
   const send = (method: "GET" | "PUT" | "DELETE", payload?: object) =>
     h.app.inject({
       method,

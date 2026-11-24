@@ -15,5 +15,6 @@ node_modules
 **/build
 **/dist
 **/.test-build
+**/.test-build-*
 data
 *.local.md

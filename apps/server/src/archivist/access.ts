@@ -32,6 +32,23 @@ export function isMember(context: ArchivistContext, archiveId: string, userId: s
   );
 }
 
+/** Whether a Discord user is on at least one archive's whitelist. */
+export function hasAnyMembership(context: ArchivistContext, userId: string): boolean {
+  return (
+    context.botDb
+      .prepare("SELECT 1 FROM archivist_whitelist WHERE discord_user_id = ? LIMIT 1")
+      .get(userId) !== undefined
+  );
+}
+
+/**
+ * Whether a signed-in Discord user may use the website at all: an owner, or
+ * a member of at least one archive. Signing in alone admits nobody.
+ */
+export function isAdmitted(context: ArchivistContext, actor: Actor): boolean {
+  return actor.isOwner || hasAnyMembership(context, actor.userId);
+}
+
 function notFound(): ArchivistError {
   return new ArchivistError(
     "archive_not_found",

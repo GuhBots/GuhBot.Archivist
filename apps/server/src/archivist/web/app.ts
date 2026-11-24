@@ -33,6 +33,8 @@ export interface WebAppOptions {
   settings: WebSettings;
   /** Whether a Discord user is one of the service's owners. */
   isOwner(userId: string): Promise<boolean>;
+  /** See `AuthOptions.ownerRecheckMs`. */
+  ownerRecheckMs?: number;
   /** Identifies requests that carry no session cookie, such as the bot's. See `AuthOptions`. */
   identify?: AuthOptions["identify"];
   /**
@@ -49,8 +51,6 @@ export interface WebAppOptions {
   logError(message: string, error: unknown): void;
   /** Replaced in tests, which stand in for Discord and Google Drive. */
   fetch?: Fetch;
-  /** Arranges a new artifact's announcement in its archive's logs channel. */
-  announce?: IntakeOptions["announce"];
   /** Checks a Discord channel a browser chose for announcements. Without it, browsers are refused. */
   checkAnnouncementChannel?: IntakeOptions["checkAnnouncementChannel"];
   /** Switches Drive links to Google's official API. */
@@ -105,7 +105,7 @@ export function buildWebApp(options: WebAppOptions): WebApp {
     logger: false,
     bodyLimit: BODY_LIMIT_BYTES,
     trustProxy: false,
-    ignoreTrailingSlash: true,
+    routerOptions: { ignoreTrailingSlash: true },
   });
   app.register(fastifyCookie, { secret: settings.sessionSecret! });
 
@@ -169,6 +169,7 @@ export function buildWebApp(options: WebAppOptions): WebApp {
     basePath,
     secure: origin.startsWith("https:"),
     isOwner: options.isOwner,
+    ownerRecheckMs: options.ownerRecheckMs,
     fetch: options.fetch ?? fetch,
     logError: options.logError,
   });
@@ -202,7 +203,6 @@ export function buildWebApp(options: WebAppOptions): WebApp {
       registerIntakeRoutes(scope, {
         context: options.context,
         auth,
-        announce: options.announce,
         checkAnnouncementChannel: options.checkAnnouncementChannel,
         driveApiKey: options.driveApiKey,
         fetch: options.fetch ?? fetch,

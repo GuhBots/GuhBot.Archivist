@@ -191,6 +191,7 @@ export function createArchive(
       folder,
       db: openArchiveDatabase(join(folder, "archive.db"), { create: true }),
       journalFile: journalFile(context, archiveId),
+      hooks: mutationHooks(context),
     };
     const createdAt = timestamp(context.now());
     commitMutation(store, {
@@ -293,9 +294,10 @@ export function registerArchive(
     folder,
     db: openArchiveDatabase(join(folder, "archive.db")),
     journalFile: journalFile(context, archiveId),
+    hooks: mutationHooks(context),
   };
   try {
-    recoverPendingMutation(store, mutationHooks(context));
+    recoverPendingMutation(store);
     const warnings = validateArchiveFolder(store);
     const current = archiveDetails(store);
     const name =

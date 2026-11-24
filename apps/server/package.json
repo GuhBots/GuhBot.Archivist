@@ -10,7 +10,8 @@
     "build:tests": "node -e \"require('node:fs').rmSync('.test-build', { recursive: true, force: true })\" && tsc -p tsconfig.test.json",
     "test": "npm run build:tests && node --test \".test-build/tests/**/*.test.js\"",
     "test:core": "npm run build:tests && node --test \".test-build/tests/archivist/core/**/*.test.js\"",
-    "test:web": "npm run build:tests && node --test \".test-build/tests/archivist/web/**/*.test.js\""
+    "test:web": "npm run build:tests && node --test \".test-build/tests/archivist/web/**/*.test.js\"",
+    "test:service": "npm run build:tests && node --test \".test-build/tests/service/**/*.test.js\""
   },
   "dependencies": {
     "@fastify/cookie": "11.1.5",
@@ -25,5 +26,6 @@
   "devDependencies": {
     "@types/archiver": "8.0.0",
     "@types/better-sqlite3": "^9.6.0"
-  }
+  },
+  "main": "build/service/main.js"
 }

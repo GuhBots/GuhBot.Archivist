@@ -2,14 +2,14 @@
 
 The archive rules and storage of the Archivist service, specified by the [Archivist plan](https://github.com/GuhBots/GuhBot.Discord/blob/feat/archivist/docs/proposals/ARCHIVIST-PLAN.md) in the GuhBot.Discord repository. The website's routes in `web/` call these operations, and the Discord bot reaches the same routes over the JSON API, so every interface applies the same validation, permissions, dates, logging, and deletion rules.
 
-This directory came from `src/archivist/` in GuhBot.Discord at commit `d4b46a8`, when Archivist ran inside the bot. Its layout is kept the same so later changes made there can still be carried over, as [Porting From the Bot](../../README.md#porting-from-the-bot) explains. It holds storage, the archive registry, permissions, preferences, media staging, artifacts, entities and their dated history, events, missing-media requests, the research board, character merge, and exports.
+This directory came from `src/archivist/` in GuhBot.Discord, at commits `d4b46a8` and `2e7c752`, when Archivist ran inside the bot. It holds storage, the archive registry, permissions, preferences, media staging, artifacts, entities and their dated history, events, missing-media requests, the research board, character merge, and exports.
 
 ## Contents
 
 | Path | Contents |
 | --- | --- |
 | `context.ts` | The shared context every operation uses, the actor type, and the cache of open archives |
-| `access.ts` | Permission checks. Non-members see no archive, and members are refused owner-only actions |
+| `access.ts` | Permission checks. Non-members see no archive, members are refused owner-only actions, and only owners and whitelisted contributors are admitted to the website |
 | `archives.ts` | Owner operations to create, rename, register, unregister, and configure archives |
 | `members.ts` | The owner's per-archive whitelist |
 | `preferences.ts` | Personal timezones and the archive remembered for Discord commands |
@@ -35,7 +35,7 @@ This directory came from `src/archivist/` in GuhBot.Discord at commit `d4b46a8`,
 | `download.ts` | Bounded downloads with size, stall, and overall limits, allowed-host redirects, and retries |
 | `drive.ts` | Public Google Drive links: parsing, metadata checks, and binary downloads, directly or through the Drive API when a key is set |
 | `lookup.ts` | Picking characters by name from a comma-separated list, character suggestions, and short-ID lookup |
-| `announcements.ts` | Per-archive announcement channels and delivery state that prevents repeated posts |
+| `announcements.ts` | Per-archive announcement channels, the queue of posts waiting for the bot with a snapshot of each artifact as submitted, claims, and delivery state that prevents repeated posts |
 | `queries.ts` | The website's paged lists of artifacts and events, with the shared filters, album sorts, and stable cursors |
 | `entity-views.ts` | Structured characters, accounts, servers, and channels with their history, the side columns' lists, and creation times read from Discord IDs |
 | `views.ts` | Data for the timeline (lanes, stretches, dots, arrows, the event band, markers), calendar and heatmap day counts, and the character graph |

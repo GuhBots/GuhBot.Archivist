@@ -118,8 +118,9 @@ export const OPERATIONAL_MIGRATIONS: readonly Migration[] = [
   },
   {
     // The service and the Discord bot run apart, so a new artifact's post waits
-    // here, with the channel set when the artifact was saved, until the bot
-    // claims it. Claiming moves it to archivist_announcements as pending.
+    // here, with the channel set and the artifact as it was when saved, until
+    // the bot claims it. Claiming moves it to archivist_announcements as
+    // pending under a claim ID the bot reports back with.
     version: 4,
     sql: `
     CREATE TABLE archivist_announcement_queue (
@@ -127,12 +128,15 @@ export const OPERATIONAL_MIGRATIONS: readonly Migration[] = [
       artifact_id TEXT NOT NULL,
       guild_id TEXT NOT NULL,
       channel_id TEXT NOT NULL,
+      snapshot_json TEXT NOT NULL CHECK (json_valid(snapshot_json)),
       queued_at TEXT NOT NULL,
       PRIMARY KEY (archive_id, artifact_id)
     );
 
     CREATE INDEX archivist_announcement_queue_order
       ON archivist_announcement_queue(queued_at, archive_id, artifact_id);
+
+    ALTER TABLE archivist_announcements ADD COLUMN claim_id TEXT;
     `,
   },
 ];

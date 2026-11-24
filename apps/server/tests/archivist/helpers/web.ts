@@ -1,11 +1,13 @@
 import type {} from "@fastify/cookie";
 import type { TestContext } from "node:test";
 import type { FastifyInstance } from "fastify";
+import { createArchive } from "../../../src/archivist/archives.js";
 import type { Actor, ArchivistContext } from "../../../src/archivist/context.js";
+import { addMember } from "../../../src/archivist/members.js";
 import { buildWebApp, type WebAppOptions } from "../../../src/archivist/web/app.js";
 import { createSession } from "../../../src/archivist/web/sessions.js";
 import { checkWebSettings, type WebSettings } from "../../../src/archivist/web/settings.js";
-import { makeArchivist, NOW } from "./context.js";
+import { makeArchivist, NOW, OWNER } from "./context.js";
 import { makeTempDir } from "./temp-dir.js";
 
 export const WEB_SETTINGS: WebSettings = {
@@ -25,11 +27,18 @@ export interface WebHarness {
   origin: string;
   /** A signed session cookie for the actor, as if they had signed in with Discord. */
   cookie(actor: Actor): string;
+  /**
+   * Whitelists a Discord user on a separate archive named "Elsewhere" and
+   * returns its ID. The website admits only owners and users on at least one
+   * whitelist, so this is how a test signs in someone who is not a member of
+   * the archive it checks.
+   */
+  admitElsewhere(userId: string): string;
 }
 
-/** What a test may replace: the bot's announcer and channel check, and the network. */
+/** What a test may replace: the Discord channel check, the network, and the Drive key. */
 export type WebOverrides = Partial<
-  Pick<WebAppOptions, "announce" | "checkAnnouncementChannel" | "fetch" | "driveApiKey">
+  Pick<WebAppOptions, "checkAnnouncementChannel" | "fetch" | "driveApiKey">
 >;
 
 /** The website on an in-memory request injector, with a temporary data directory. */
@@ -57,6 +66,7 @@ export async function webHarness(
   });
   await app.ready();
   t.after(() => app.close());
+  let elsewhere: string | null = null;
   return {
     app,
     context,
@@ -70,6 +80,11 @@ export async function webHarness(
         avatarUrl: null,
       });
       return app.signCookie(token);
+    },
+    admitElsewhere(userId) {
+      elsewhere ??= createArchive(context, OWNER, { name: "Elsewhere" }).archiveId;
+      addMember(context, OWNER, { archiveId: elsewhere, userId });
+      return elsewhere;
     },
   };
 }

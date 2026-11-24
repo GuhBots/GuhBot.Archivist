@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { test, type TestContext } from "node:test";
 import type { FastifyInstance, LightMyRequestResponse } from "fastify";
+import { createArchive } from "../../../src/archivist/archives.js";
+import { addMember, removeMember } from "../../../src/archivist/members.js";
 import { buildWebApp } from "../../../src/archivist/web/app.js";
 import { hashToken } from "../../../src/archivist/web/sessions.js";
 import { checkWebSettings, type WebSettings } from "../../../src/archivist/web/settings.js";
-import { makeArchivist, MEMBER, NOW, OWNER } from "../helpers/context.js";
+import { makeArchivist, MEMBER, NOW, OTHER, OWNER } from "../helpers/context.js";
 import { makeTempDir } from "../helpers/temp-dir.js";
 
 const SETTINGS: WebSettings = {
@@ -72,6 +74,13 @@ interface Harness {
   origin: string;
   /** Signs in through the whole flow and returns the session cookie. */
   signIn(userId: string, code?: string): Promise<string>;
+  /**
+   * Whitelists a Discord user on the archive "Hangout". The website gives a
+   * session only to owners and users on at least one archive's whitelist.
+   */
+  whitelist(userId: string): void;
+  /** Takes a Discord user off the "Hangout" whitelist. */
+  unlist(userId: string): void;
 }
 
 async function harness(t: TestContext, settings: WebSettings = SETTINGS): Promise<Harness> {
@@ -91,6 +100,7 @@ async function harness(t: TestContext, settings: WebSettings = SETTINGS): Promis
   });
   await app.ready();
   t.after(() => app.close());
+  const { archiveId } = createArchive(context, OWNER, { name: "Hangout" });
   const base = new URL(settings.baseUrl).pathname.replace(/\/+$/, "");
   const h: Harness = {
     app,
@@ -116,6 +126,12 @@ async function harness(t: TestContext, settings: WebSettings = SETTINGS): Promis
       assert.equal(back.statusCode, 302, back.body);
       return cookieValue(back, "archivist_session")!;
     },
+    whitelist(userId) {
+      addMember(context, OWNER, { archiveId, userId });
+    },
+    unlist(userId) {
+      removeMember(context, OWNER, { archiveId, userId });
+    },
   };
   return h;
 }
@@ -137,6 +153,7 @@ function cookieValue(response: LightMyRequestResponse, name: string): string | u
 
 test("signing in with Discord creates a seven-day session and keeps no Discord token", async (t) => {
   const h = await harness(t);
+  h.whitelist(MEMBER.userId);
   const start = await h.app.inject({ method: "GET", url: "/auth/discord" });
   assert.equal(start.statusCode, 302);
   const location = new URL(start.headers.location as string);
@@ -229,8 +246,45 @@ test("signing in with Discord creates a seven-day session and keeps no Discord t
   );
 });
 
+test("signing in admits only owners and whitelisted contributors, and tells anyone else why", async (t) => {
+  const h = await harness(t);
+  h.discord.users["lee"] = { id: OTHER.userId, username: "lee", global_name: "Lee", avatar: null };
+  const start = await h.app.inject({ method: "GET", url: "/auth/discord" });
+  const state = new URL(start.headers.location as string).searchParams.get("state")!;
+  const refused = await h.app.inject({
+    method: "GET",
+    url: `/auth/discord/callback?code=lee&state=${state}`,
+    cookies: { archivist_signin: cookieValue(start, "archivist_signin")! },
+  });
+  assert.equal(refused.statusCode, 403);
+  assert.match(String(refused.headers["content-type"]), /^text\/html/);
+  assert.match(refused.body, /<title>No access yet<\/title>/);
+  assert.match(refused.body, /whitelist/);
+  // The page names no archive, and no session is issued.
+  assert.doesNotMatch(refused.body, /Hangout/);
+  assert.equal(cookieHeader(refused, "archivist_session"), undefined);
+  assert.equal(
+    (h.db.prepare("SELECT count(*) AS n FROM archivist_sessions").get() as { n: number }).n,
+    0,
+  );
+  // Discord's token is revoked, as after any sign-in.
+  assert.deepEqual(h.discord.revoked, ["access-lee"]);
+
+  // Once whitelisted, the same account signs in. An owner needs no whitelist entry.
+  h.whitelist(OTHER.userId);
+  const me = (cookie: string) =>
+    h.app.inject({ method: "GET", url: "/api/me", cookies: { archivist_session: cookie } });
+  const member = await me(await h.signIn(OTHER.userId));
+  assert.equal(member.statusCode, 200);
+  assert.equal(member.json().isOwner, false);
+  const owner = await me(await h.signIn(OWNER.userId));
+  assert.equal(owner.statusCode, 200);
+  assert.equal(owner.json().isOwner, true);
+});
+
 test("a sign-in must come back to the same browser, once, within ten minutes", async (t) => {
   const h = await harness(t);
+  h.whitelist(MEMBER.userId);
   h.discord.users["c1"] = { id: MEMBER.userId, username: "sam", global_name: null, avatar: null };
   const start = async () => {
     const response = await h.app.inject({ method: "GET", url: "/auth/discord" });
@@ -309,7 +363,9 @@ test("sessions refuse tampering, and owner status is checked again after five mi
   assert.equal((await me(`${token}x.${signature}`)).statusCode, 401);
   assert.equal((await me(cookie)).json().isOwner, true);
 
-  // Ownership removed: still the old answer within five minutes, then the new one.
+  // Ownership removed: still the old answer within five minutes, then the new one. The owner
+  // signed in without a whitelist entry, and gets one here so the website keeps admitting them.
+  h.whitelist(OWNER.userId);
   h.owners.delete(OWNER.userId);
   h.clock.ms += 4 * 60_000;
   assert.equal((await me(cookie)).json().isOwner, true);
@@ -317,8 +373,42 @@ test("sessions refuse tampering, and owner status is checked again after five mi
   assert.equal((await me(cookie)).json().isOwner, false);
 });
 
+test("losing the last whitelist entry, or owner status without one, ends the session on its next request", async (t) => {
+  const h = await harness(t);
+  const me = (cookie: string) =>
+    h.app.inject({ method: "GET", url: "/api/me", cookies: { archivist_session: cookie } });
+  const sessions = () =>
+    (h.db.prepare("SELECT count(*) AS n FROM archivist_sessions").get() as { n: number }).n;
+
+  h.whitelist(MEMBER.userId);
+  const member = await h.signIn(MEMBER.userId);
+  assert.equal((await me(member)).statusCode, 200);
+  h.unlist(MEMBER.userId);
+  const ended = await me(member);
+  assert.equal(ended.statusCode, 403);
+  assert.equal(ended.json().code, "forbidden");
+  assert.equal(ended.json().details.reason, "not_admitted");
+  assert.equal(sessions(), 0, "the session is deleted, not just refused");
+  const after = await me(member);
+  assert.equal(after.statusCode, 401);
+  assert.equal(after.json().code, "no_session");
+
+  // An owner on no whitelist keeps the session until the owner check finds they are no longer one.
+  const owner = await h.signIn(OWNER.userId);
+  h.owners.delete(OWNER.userId);
+  h.clock.ms += 4 * 60_000;
+  assert.equal((await me(owner)).statusCode, 200);
+  h.clock.ms += 60_000;
+  const demoted = await me(owner);
+  assert.equal(demoted.statusCode, 403);
+  assert.equal(demoted.json().details.reason, "not_admitted");
+  assert.equal((await me(owner)).statusCode, 401);
+  assert.equal(sessions(), 0);
+});
+
 test("signing out ends the session, and changes must come from the website", async (t) => {
   const h = await harness(t);
+  h.whitelist(MEMBER.userId);
   const cookie = await h.signIn(MEMBER.userId);
   const logout = (headers: Record<string, string>) =>
     h.app.inject({
@@ -358,6 +448,7 @@ test("signing out ends the session, and changes must come from the website", asy
 
 test("the account menu sets and resets the contributor's own date order and timezone", async (t) => {
   const h = await harness(t);
+  h.whitelist(MEMBER.userId);
   const cookie = await h.signIn(MEMBER.userId);
   const send = (method: "PUT" | "DELETE", url: string, payload?: unknown) =>
     h.app.inject({
@@ -393,6 +484,7 @@ test("the account menu sets and resets the contributor's own date order and time
 
 test("the website works under a path, with secure cookies on HTTPS", async (t) => {
   const h = await harness(t, { ...SETTINGS, baseUrl: "https://guhbot.example.com/archivist" });
+  h.whitelist(MEMBER.userId);
   const start = await h.app.inject({ method: "GET", url: "/archivist/auth/discord" });
   assert.equal(
     new URL(start.headers.location as string).searchParams.get("redirect_uri"),

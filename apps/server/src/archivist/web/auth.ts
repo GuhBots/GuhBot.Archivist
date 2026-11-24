@@ -1,5 +1,6 @@
 import type {} from "@fastify/cookie";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { isAdmitted } from "../access.js";
 import type { Actor, ArchivistContext } from "../context.js";
 import { ArchivistError } from "../errors.js";
 import {
@@ -68,8 +69,14 @@ export interface AuthOptions {
   basePath: string;
   /** Cookies are marked Secure when the website uses HTTPS. */
   secure: boolean;
-  /** Whether a Discord user owns the bot's application. */
+  /** Whether a Discord user is one of the owners. */
   isOwner(userId: string): Promise<boolean>;
+  /**
+   * How long a session's owner status is trusted before `isOwner` is asked
+   * again. Zero asks on every request, for an owner list that costs nothing
+   * to read.
+   */
+  ownerRecheckMs?: number;
   fetch: Fetch;
   logError(message: string, error: unknown): void;
   /**
@@ -87,6 +94,14 @@ export interface Auth {
 
 function noSession(): ArchivistError {
   return new ArchivistError("no_session", "Sign in with Discord first.");
+}
+
+function notAdmitted(): ArchivistError {
+  return new ArchivistError(
+    "forbidden",
+    "Your Discord account is not on any archive's whitelist. Ask the archive's owner to add you.",
+    { reason: "not_admitted" },
+  );
 }
 
 function escapeHtml(text: string): string {
@@ -112,7 +127,7 @@ export function createAuth(options: AuthOptions): Auth {
     if (!token) throw noSession();
     let session = readSession(context, token);
     if (!session) throw noSession();
-    if (ownerCheckDue(context, session)) {
+    if (ownerCheckDue(context, session, options.ownerRecheckMs)) {
       try {
         session = recordOwnerCheck(context, session, await options.isOwner(session.userId));
       } catch (error) {
@@ -120,21 +135,32 @@ export function createAuth(options: AuthOptions): Auth {
         options.logError("Could not check owner status", error);
       }
     }
-    return { actor: { userId: session.userId, isOwner: session.isOwner }, session, via: "session" };
+    const actor = { userId: session.userId, isOwner: session.isOwner };
+    // Losing the last whitelist entry ends the session on its next request.
+    if (!isAdmitted(context, actor)) {
+      deleteSession(context, token);
+      throw notAdmitted();
+    }
+    return { actor, session, via: "session" };
   }
 
   function preferences(actor: Actor) {
     return { timeZone: getTimeZone(context, actor), dateOrder: getDateOrder(context, actor) };
   }
 
-  function signInPage(reply: FastifyReply, status: number, message: string) {
+  function signInPage(
+    reply: FastifyReply,
+    status: number,
+    message: string,
+    title = "Sign-in failed",
+  ) {
     return reply
       .status(status)
       .type("text/html")
       .send(
-        `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Sign-in failed</title>` +
+        `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(title)}</title>` +
           `<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#1e1f22;color:#f2f3f5;font:16px/1.5 monospace}main{max-width:36rem;padding:24px}a{color:#c9cdfb}</style></head>` +
-          `<body><main><h1>Sign-in failed</h1><p>${escapeHtml(message)}</p><p><a href="${escapeHtml(`${options.basePath}/auth/discord`)}">Sign in again</a></p></main></body></html>`,
+          `<body><main><h1>${escapeHtml(title)}</h1><p>${escapeHtml(message)}</p><p><a href="${escapeHtml(`${options.basePath}/auth/discord`)}">Sign in again</a></p></main></body></html>`,
       );
   }
 
@@ -224,6 +250,15 @@ export function createAuth(options: AuthOptions): Auth {
             isOwner = await options.isOwner(identity.id);
           } catch (ownerError) {
             options.logError("Could not check owner status at sign-in", ownerError);
+          }
+          // Only owners and whitelisted contributors get a session. Anyone else sees why.
+          if (!isAdmitted(context, { userId: identity.id, isOwner })) {
+            return signInPage(
+              reply,
+              403,
+              `${identity.name}, your Discord account is not on any archive's whitelist. Ask the archive's owner to add you, then sign in again.`,
+              "No access yet",
+            );
           }
           const token = createSession(context, {
             userId: identity.id,

@@ -123,7 +123,9 @@ test("characters are created, edited, given history, merged, and deleted from th
   assert.equal(gone.status, 204);
   assert.equal((await call("GET", `/entities/character/${sam.body.id}`)).status, 404);
 
-  // A non-member cannot change anything, and cannot tell the archive exists.
+  // A non-member cannot change anything, and cannot tell the archive exists. Belonging to
+  // another archive admits them to the website but gives them nothing here.
+  h.admitElsewhere(OTHER.userId);
   const outsider = await call(
     "POST",
     "/entities/character",

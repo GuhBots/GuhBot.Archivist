@@ -8,6 +8,7 @@ Add or update definitions when terminology changes, and link to them from other 
 
 | Term | Meaning |
 | --- | --- |
+| AFK | Away from keyboard. The Discord bot keeps its users' AFK status, which is not Archivist data |
 | AI | Artificial intelligence |
 | AMD | Advanced Micro Devices, a maker of the 64-bit x86 processors used in most desktops, laptops, and servers |
 | API | Application programming interface |
@@ -30,10 +31,13 @@ Add or update definitions when terminology changes, and link to them from other 
 | LF | Line feed, the line ending used by Linux and macOS |
 | LTS | Long-term support, a release maintained for several years |
 | M4A | An audio file in the same container as MP4, often made by phone voice recorders |
+| MB | Megabyte, one million bytes. MiB, a mebibyte, is 1,048,576 bytes |
+| MiB | Mebibyte, 1,048,576 bytes. Archivist accepts files up to 100 MiB |
 | MKV | Matroska video, a video file format |
 | MOV | Apple's QuickTime video file format, which iPhone cameras record |
 | MP3 | A common audio file format |
 | MP4 | A common video file format |
+| OAuth | The standard sign-in protocol Discord uses to tell Archivist who a visitor is |
 | OS | Operating system |
 | PNG | Portable Network Graphics, an image file format |
 | PR | Pull request |

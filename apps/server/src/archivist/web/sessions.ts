@@ -131,10 +131,12 @@ export function readSession(context: ArchivistContext, token: string): Session |
 }
 
 /** Whether the session's owner status is old enough to ask Discord again. */
-export function ownerCheckDue(context: ArchivistContext, session: Session): boolean {
-  return (
-    session.ownerCheckedMs === null || nowMs(context) - session.ownerCheckedMs >= OWNER_RECHECK_MS
-  );
+export function ownerCheckDue(
+  context: ArchivistContext,
+  session: Session,
+  recheckMs = OWNER_RECHECK_MS,
+): boolean {
+  return session.ownerCheckedMs === null || nowMs(context) - session.ownerCheckedMs >= recheckMs;
 }
 
 export function recordOwnerCheck(

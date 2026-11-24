@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type Database from "better-sqlite3";
+import { queueArtifactAnnouncement } from "./announcements.js";
 import { openArchiveDatabase } from "./archive-database.js";
 import { SYSTEM_EDITOR, syncGaps } from "./board.js";
 import { ArchivistError } from "./errors.js";
@@ -58,10 +59,16 @@ export function closeArchivistContext(context: ArchivistContext): void {
   context.stores.clear();
 }
 
-/** Applies the bot-database follow-ups of archive mutations. Each is safe to repeat. */
+/** Applies the operational-database follow-ups of archive mutations. Each is safe to repeat. */
 export function mutationHooks(context: ArchivistContext): MutationHooks {
   return {
-    applyFollowUp(followUp: FollowUp) {
+    applyFollowUp(followUp: FollowUp, store: ArchiveStore) {
+      if (followUp.kind === "announce_artifact") {
+        // Runs right after the artifact commits, or on recovery before any later change,
+        // so the snapshot shows the artifact as it was submitted.
+        queueArtifactAnnouncement(context, store, String(followUp.artifactId));
+        return;
+      }
       if (followUp.kind === "archive_name") {
         const name = String(followUp.name);
         context.botDb
@@ -99,9 +106,10 @@ export function openStore(context: ArchivistContext, archiveId: string): Archive
     folder,
     db: openArchiveDatabase(file),
     journalFile: journalFile(context, archiveId),
+    hooks: mutationHooks(context),
   };
   try {
-    recoverPendingMutation(store, mutationHooks(context));
+    recoverPendingMutation(store);
     // Archives from before the research board, or edited elsewhere, get
     // their derived gap cards in line before anyone reads them.
     store.db.transaction(() => syncGaps(store.db, timestamp(context.now()), SYSTEM_EDITOR))();

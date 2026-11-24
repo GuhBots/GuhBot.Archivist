@@ -1,42 +1,43 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { registeredArchive } from "../archivist/access.js";
 import {
+  type AnnouncementSnapshot,
   type ClaimedAnnouncement,
   claimQueuedAnnouncements,
   deliveryState,
+  finishAnnouncement,
   reportAnnouncement,
 } from "../archivist/announcements.js";
-import { archiveDetails } from "../archivist/archives.js";
-import { type ArtifactDetails, readArtifact } from "../archivist/artifacts.js";
+import { readArtifact } from "../archivist/artifacts.js";
 import { type ArchivistContext, openStore } from "../archivist/context.js";
 import { ArchivistError } from "../archivist/errors.js";
 import { discordId } from "../archivist/fields.js";
-import { characterNames } from "../archivist/lookup.js";
 import { archiveIdValue } from "../archivist/paths.js";
 import type { ServiceAuth } from "./service-auth.js";
 
 /**
- * The Discord bot's side of upload announcements. New artifacts wait in a
- * queue. The bot claims them, posts each one in its archive's logs channel,
- * and reports how the post went. A claim is handed out once. A claim not
+ * The Discord bot's side of upload announcements. A new artifact's post
+ * waits in a queue with a snapshot of the artifact as it was submitted. The
+ * bot claims posts, sends each to its archive's logs channel, and reports
+ * how it went under the claim's ID. A claim is handed out once. A claim not
  * reported within the lease becomes indeterminate and is never handed out
- * again, because the post may already be in the channel.
+ * again, because the post may already be in the channel. These routes need
+ * the service credential and act for no contributor.
  */
 
 const DEFAULT_CLAIMS = 10;
 const MAX_CLAIMS = 25;
 const MAX_REASON_LENGTH = 200;
 const RESULT_STATES = ["sent", "failed", "indeterminate"] as const;
+const ARTIFACT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const CLAIM_ID = ARTIFACT_ID;
 
 /** Everything the bot needs to post one artifact's announcement. */
-export interface AnnouncementItem {
+export interface AnnouncementItem extends AnnouncementSnapshot {
   archiveId: string;
-  archiveName: string;
-  archiveTimeZone: string;
+  artifactId: string;
+  claimId: string;
   channel: { guildId: string; channelId: string };
-  artifact: ArtifactDetails;
-  /** Known names of `artifact.links.characters`, in the same order. */
-  characterNames: string[];
   /** Where the bot downloads the preview, relative to the service's base address. */
   previewPath: string | null;
 }
@@ -58,20 +59,15 @@ function claimLimit(value: unknown): number {
     throw new ArchivistError(
       "invalid_input",
       `limit must be a whole number from 1 to ${MAX_CLAIMS}.`,
-      {
-        field: "limit",
-      },
+      { field: "limit" },
     );
   }
   return value;
 }
 
-function artifactIdValue(value: unknown): string | null {
-  if (value === undefined || value === null) return null;
-  if (typeof value !== "string" || !/^[0-9a-f-]{36}$/.test(value)) {
-    throw new ArchivistError("invalid_input", "artifactId must be a full artifact ID.", {
-      field: "artifactId",
-    });
+function uuidValue(field: string, value: unknown): string {
+  if (typeof value !== "string" || !ARTIFACT_ID.test(value)) {
+    throw new ArchivistError("invalid_input", `${field} must be a full ID.`, { field });
   }
   return value;
 }
@@ -86,26 +82,23 @@ export function registerAnnouncementRoutes(
   service: ServiceAuth,
   logError: (message: string, error: unknown) => void,
 ): void {
-  /** A claimed post with its artifact, or null after recording why it cannot be posted. */
-  function describe(claim: ClaimedAnnouncement): AnnouncementItem | null {
+  /** A claimed post ready to send, or null after recording why it cannot be sent. */
+  function itemOf(claim: ClaimedAnnouncement): AnnouncementItem | null {
     const giveUp = (errorCode: string) => {
-      reportAnnouncement(context, { ...claim, state: "failed", errorCode });
+      finishAnnouncement(context, { ...claim, state: "failed", errorCode });
       return null;
     };
     try {
       const store = openStore(context, claim.archiveId);
-      const details = archiveDetails(store);
-      const artifact = readArtifact(store.db, claim.artifactId);
-      // Deleted before the bot claimed it, so there is nothing left to show.
-      if (!artifact) return giveUp("artifact_deleted");
+      // An artifact deleted before the bot claimed its post is never announced.
+      if (!readArtifact(store.db, claim.artifactId)) return giveUp("artifact_deleted");
       return {
+        ...claim.snapshot,
         archiveId: claim.archiveId,
-        archiveName: registeredArchive(context, claim.archiveId)?.name ?? details.name,
-        archiveTimeZone: details.timezone,
+        artifactId: claim.artifactId,
+        claimId: claim.claimId,
         channel: { guildId: claim.guildId, channelId: claim.channelId },
-        artifact,
-        characterNames: characterNames(store.db, artifact.links.characters),
-        previewPath: artifact.media.hasPreview
+        previewPath: claim.snapshot.artifact.media.hasPreview
           ? previewPath(claim.archiveId, claim.artifactId)
           : null,
       };
@@ -128,10 +121,13 @@ export function registerAnnouncementRoutes(
         body.archiveId === undefined || body.archiveId === null
           ? null
           : archiveIdValue("archiveId", body.archiveId),
-      artifactId: artifactIdValue(body.artifactId),
+      artifactId:
+        body.artifactId === undefined || body.artifactId === null
+          ? null
+          : uuidValue("artifactId", body.artifactId),
       limit: claimLimit(body.limit),
     });
-    return { items: claims.map(describe).filter((item) => item !== null) };
+    return { items: claims.map(itemOf).filter((item) => item !== null) };
   });
 
   /** The preview image for a claimed post, which the bot attaches to the message. */
@@ -160,7 +156,10 @@ export function registerAnnouncementRoutes(
     },
   );
 
-  /** How a claimed post went: sent with its message, definitely failed, or unknown. */
+  /**
+   * How a claimed post went: sent with its message, definitely failed, or
+   * unknown. Repeating the same report is harmless.
+   */
   scope.post<{ Params: Params }>(
     "/api/service/announcements/:archiveId/:artifactId/result",
     async (request, reply) => {
@@ -173,6 +172,11 @@ export function registerAnnouncementRoutes(
           field: "state",
         });
       }
+      if (typeof body.claimId !== "string" || !CLAIM_ID.test(body.claimId)) {
+        throw new ArchivistError("invalid_input", "claimId must be the ID the claim returned.", {
+          field: "claimId",
+        });
+      }
       const messageId = state === "sent" ? discordId("messageId", body.messageId) : undefined;
       const reason =
         body.reason === undefined || body.reason === null ? undefined : String(body.reason);
@@ -181,15 +185,25 @@ export function registerAnnouncementRoutes(
           field: "reason",
         });
       }
-      const recorded = reportAnnouncement(context, {
+      const outcome = reportAnnouncement(context, {
         archiveId,
         artifactId: request.params.artifactId,
+        claimId: body.claimId,
         state,
         messageId,
         errorCode: reason,
       });
-      if (!recorded) {
-        throw new ArchivistError("not_found", "That artifact's announcement was not claimed.");
+      if (outcome === "unknown_claim") {
+        throw new ArchivistError("not_found", "There is no such claim for that artifact.", {
+          reason: "unknown_claim",
+        });
+      }
+      if (outcome === "stale_claim") {
+        throw new ArchivistError(
+          "stale_version",
+          "That claim was already settled differently, or a newer claim replaced it.",
+          { reason: "stale_claim" },
+        );
       }
       return reply.status(204).send();
     },

@@ -122,10 +122,19 @@ test("archive routes need a session and current access, rechecked on every reque
     401,
   );
 
+  // Someone on no whitelist at all is not admitted to the website.
+  const stranger = await get(h, "/api/archives", h.cookie(OTHER));
+  assert.equal(stranger.statusCode, 403);
+  assert.equal(stranger.json().details.reason, "not_admitted");
+
+  // A member of another archive sees only that one, and cannot tell this one exists.
+  const elsewhere = h.admitElsewhere(OTHER.userId);
   const outsider = await get(h, `/api/archives/${archiveId}/artifacts`, h.cookie(OTHER));
   assert.equal(outsider.statusCode, 404);
   assert.equal(outsider.json().code, "archive_not_found");
-  assert.deepEqual((await get(h, "/api/archives", h.cookie(OTHER))).json(), { archives: [] });
+  assert.deepEqual((await get(h, "/api/archives", h.cookie(OTHER))).json(), {
+    archives: [{ archiveId: elsewhere, name: "Elsewhere" }],
+  });
 
   const member = h.cookie(MEMBER);
   assert.deepEqual((await get(h, "/api/archives", member)).json(), {
@@ -133,13 +142,24 @@ test("archive routes need a session and current access, rechecked on every reque
   });
   assert.equal((await get(h, `/api/archives/${archiveId}`, member)).json().name, "Hangout");
 
-  // Removal applies to the very next request on the same session.
+  // Removal applies to the very next request on the same session. The contributor still
+  // belongs to another archive, so the session stays but this archive is gone from it.
+  h.admitElsewhere(MEMBER.userId);
   removeMember(h.context, OWNER, { archiveId, userId: MEMBER.userId });
   assert.equal((await get(h, `/api/archives/${archiveId}/artifacts`, member)).statusCode, 404);
   assert.equal(
     (await get(h, `/api/archives/${archiveId}/artifacts`, h.cookie(OWNER))).statusCode,
     200,
   );
+
+  // Removing the last whitelist entry ends the session itself on its next request.
+  removeMember(h.context, OWNER, { archiveId: elsewhere, userId: MEMBER.userId });
+  const ended = await get(h, "/api/archives", member);
+  assert.equal(ended.statusCode, 403);
+  assert.equal(ended.json().details.reason, "not_admitted");
+  const gone = await get(h, "/api/archives", member);
+  assert.equal(gone.statusCode, 401);
+  assert.equal(gone.json().code, "no_session");
 });
 
 test("artifact lists filter by every shared category, sort, and page without repeats", async (t) => {

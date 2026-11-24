@@ -13,13 +13,17 @@
   },
   "scripts": {
     "build": "npm run build --workspace apps/server && npm run build --workspace apps/web",
+    "start": "node --env-file-if-exists=.env apps/server/build/service/main.js serve",
+    "view": "node apps/server/build/service/main.js view",
+    "import-bot-state": "node --env-file-if-exists=.env apps/server/build/service/main.js import-bot-state",
     "typecheck": "npm run typecheck --workspace apps/server && npm run typecheck --workspace apps/web",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check": "npm run typecheck && npm run format:check",
     "test": "npm run test --workspace apps/server",
     "test:core": "npm run test:core --workspace apps/server",
-    "test:web": "npm run test:web --workspace apps/server"
+    "test:web": "npm run test:web --workspace apps/server",
+    "test:service": "npm run test:service --workspace apps/server"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

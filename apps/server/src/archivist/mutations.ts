@@ -39,6 +39,12 @@ export interface ArchiveStore {
   db: Database.Database;
   /** The pending-mutation journal, kept outside the portable folder. */
   journalFile: string;
+  /**
+   * Applies this archive's follow-ups. Every mutation and recovery on the
+   * store uses them unless given its own, so a follow-up left by one
+   * operation is finished by whichever change runs next.
+   */
+  hooks?: MutationHooks;
 }
 
 const VERSIONED_TABLES = {
@@ -60,15 +66,15 @@ export type Expectation =
   | { table: VersionedTable; id: string; state: "present" | "absent" }
   | { table: VersionedTable; id: string; version: number };
 
-/** A change to bot-database state that must follow a committed archive change. */
+/** A change to operational-database state that must follow a committed archive change. */
 export interface FollowUp {
   kind: string;
   [key: string]: unknown;
 }
 
 export interface MutationHooks {
-  /** Applies a follow-up. It must be safe to run more than once. */
-  applyFollowUp?(followUp: FollowUp): void;
+  /** Applies a follow-up after its archive change committed. It must be safe to run more than once. */
+  applyFollowUp?(followUp: FollowUp, store: ArchiveStore): void;
 }
 
 export interface Journal {
@@ -213,7 +219,7 @@ function finish(store: ArchiveStore, journal: Journal, hooks: MutationHooks): vo
   completeLog(store, journal);
   for (const followUp of journal.followUps) {
     if (!hooks.applyFollowUp) throw needsRepair(store, "missing_follow_up_handler");
-    hooks.applyFollowUp(followUp);
+    hooks.applyFollowUp(followUp, store);
   }
   deleteJournal(store);
 }
@@ -224,7 +230,7 @@ function finish(store: ArchiveStore, journal: Journal, hooks: MutationHooks): vo
  */
 export function recoverPendingMutation(
   store: ArchiveStore,
-  hooks: MutationHooks = {},
+  hooks: MutationHooks = store.hooks ?? {},
 ): "none" | "completed" | "discarded" {
   const journal = readJournal(store);
   rmSync(rewriteTempFile(store), { force: true });
@@ -256,7 +262,7 @@ export function recoverPendingMutation(
 export function commitMutation<T>(
   store: ArchiveStore,
   input: MutationInput<T>,
-  hooks: MutationHooks = {},
+  hooks: MutationHooks = store.hooks ?? {},
 ): T {
   recoverPendingMutation(store, hooks);
   const journal = planJournal(store, input);

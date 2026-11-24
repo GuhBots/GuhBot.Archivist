@@ -81,6 +81,14 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): ServiceConfig 
 /** The settings `serve` needs, or an error naming what is missing or wrong. */
 export function checkServiceConfig(config: ServiceConfig): void {
   checkWebSettings(config.web);
+  // Without an owner, nobody could create the first archive or whitelist anyone.
+  if (config.ownerIds.size === 0) {
+    throw new ArchivistError(
+      "invalid_input",
+      "Set ARCHIVIST_OWNER_IDS to the Discord user IDs of the owners before starting the service.",
+      { reason: "missing_owner_ids" },
+    );
+  }
   if (
     config.serviceToken !== null &&
     Buffer.byteLength(config.serviceToken, "utf8") < MIN_SERVICE_TOKEN_BYTES

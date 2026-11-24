@@ -1,7 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { FastifyRequest } from "fastify";
 import { ArchivistError } from "../archivist/errors.js";
-import type { Delegated } from "../archivist/web/auth.js";
+import { type Delegated, SESSION_COOKIE } from "../archivist/web/auth.js";
 
 /**
  * The Discord bot's credential for the API. The bot sends the shared service
@@ -15,6 +15,8 @@ import type { Delegated } from "../archivist/web/auth.js";
 export const ACTING_USER_HEADER = "x-archivist-user";
 
 const BEARER = /^Bearer\s+(\S+)\s*$/i;
+/** The browser session cookie, read from the raw header because cookies are parsed later. */
+const SESSION_COOKIE_PATTERN = new RegExp(`(^|;\\s*)${SESSION_COOKIE}=`);
 const DISCORD_ID = /^\d{17,20}$/;
 
 function digest(text: string): Buffer {
@@ -44,6 +46,14 @@ export function serviceAuth(options: {
     const match = BEARER.exec(header);
     // Another scheme, such as a reverse proxy's Basic sign-in, is not meant for this service.
     if (!match) return false;
+    // A request is either the bot's or a browser's. One carrying both is refused rather than guessed.
+    if (SESSION_COOKIE_PATTERN.test(request.headers.cookie ?? "")) {
+      throw new ArchivistError(
+        "invalid_input",
+        "Send either the service credential or a browser session, not both.",
+        { reason: "mixed_credentials" },
+      );
+    }
     if (expected === null || !timingSafeEqual(digest(match[1]!), expected)) {
       throw new ArchivistError("no_session", "That service credential is not valid.", {
         reason: "invalid_service_token",

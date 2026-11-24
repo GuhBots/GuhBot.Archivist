@@ -464,6 +464,9 @@ export function createArtifact(
       syncGaps(db, now, actor.userId);
     },
     append: [logEntry(context, actor, "artifact", artifactId, changes)],
+    // Queues the upload announcement once the artifact is saved, and again on recovery
+    // if the service stopped in between, so no new artifact is left unannounced.
+    followUps: [{ kind: "announce_artifact", archiveId: store.archiveId, artifactId }],
   });
   return { status: "created", artifact: readArtifact(store.db, artifactId)! };
 }

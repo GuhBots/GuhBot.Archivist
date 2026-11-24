@@ -5,6 +5,7 @@ import { pipeline } from "node:stream/promises";
 import type {} from "@fastify/multipart";
 import type { FastifyInstance } from "fastify";
 import {
+  announcementStatus,
   getAnnouncementChannel,
   removeAnnouncementChannel,
   setAnnouncementChannel,
@@ -20,7 +21,7 @@ import {
 } from "../artifacts.js";
 import type { Actor, ArchivistContext } from "../context.js";
 import { needsZoneConfirmation } from "../dates.js";
-import { downloadDiscordAttachment, isDiscordCdn } from "../download.js";
+import { isDiscordCdn } from "../download.js";
 import { DriveClient, parseDriveLink } from "../drive.js";
 import { ArchivistError } from "../errors.js";
 import { entityView } from "../entity-views.js";
@@ -42,19 +43,15 @@ import { ReviewStore } from "./reviews.js";
  * Adding artifacts, from the website or from the Discord bot, with the same
  * steps: the fields are checked before any file is kept, a source already in
  * the archive opens a duplicate review instead of a copy, and a new artifact
- * is announced in the archive's logs channel. Uploads send their fields
- * before the file. A Drive link needs no file. Only the bot, with its service
- * credential, may submit a Discord attachment, which the service downloads
- * from Discord itself.
+ * is queued for its announcement in the archive's logs channel. Uploads send
+ * their fields before the file. A Drive link needs no file. Only the bot,
+ * with its service credential, may mark an upload as a Discord attachment
+ * and say where in Discord it was submitted.
  */
-
-export type AnnouncementResult = { status: string; reason?: string };
 
 export interface IntakeOptions {
   context: ArchivistContext;
   auth: Auth;
-  /** Arranges a new artifact's post in its logs channel. Without it nothing is posted. */
-  announce?(archiveId: string, artifact: ArtifactDetails): Promise<AnnouncementResult>;
   /**
    * Checks a Discord channel a browser chose for announcements: the bot can
    * post there and the contributor can see it. Returns its server. Without
@@ -70,67 +67,17 @@ export interface IntakeOptions {
 type Fields = Record<string, unknown>;
 const LINK_FIELDS = ["characters", "accounts", "servers", "channels", "events"] as const;
 /** Fields only the Discord bot may send. */
-const BOT_FIELDS = ["discordAttachment", "submission"] as const;
-const MAX_FILENAME_LENGTH = 255;
-
-/** A file attached to a Discord command, as the bot describes it. */
-interface DiscordAttachment {
-  id: string;
-  url: string;
-  filename: string;
-  size: number | null;
-}
+const BOT_FIELDS = [
+  "discordAttachmentId",
+  "discordAttachmentUrl",
+  "submissionGuildId",
+  "submissionChannelId",
+  "submissionMessageId",
+] as const;
+const DISCORD_ID = /^\d{17,20}$/;
 
 function invalid(message: string, field: string): ArchivistError {
   return new ArchivistError("invalid_input", message, { field });
-}
-
-/** Reads the bot's description of an attachment. Its address must be Discord's own file host. */
-function discordAttachment(value: unknown): DiscordAttachment | null {
-  if (value === undefined || value === null) return null;
-  if (typeof value !== "object" || Array.isArray(value)) {
-    throw invalid("discordAttachment must describe one attachment.", "discordAttachment");
-  }
-  const { id, url, filename, size } = value as Record<string, unknown>;
-  if (typeof id !== "string" || !/^\d{17,20}$/.test(id)) {
-    throw invalid("discordAttachment.id must be the attachment's Discord ID.", "discordAttachment");
-  }
-  let address: URL | null = null;
-  try {
-    address = typeof url === "string" ? new URL(url) : null;
-  } catch {
-    address = null;
-  }
-  if (!address || address.protocol !== "https:" || !isDiscordCdn(address.hostname)) {
-    throw invalid(
-      "discordAttachment.url must be the attachment's Discord address.",
-      "discordAttachment",
-    );
-  }
-  if (typeof filename !== "string" || !filename.trim() || filename.length > MAX_FILENAME_LENGTH) {
-    throw invalid(
-      "discordAttachment.filename must be the attachment's file name.",
-      "discordAttachment",
-    );
-  }
-  if (
-    size !== undefined &&
-    size !== null &&
-    (typeof size !== "number" || !Number.isInteger(size) || size < 0)
-  ) {
-    throw invalid("discordAttachment.size must be a whole number of bytes.", "discordAttachment");
-  }
-  return { id, url: address.href, filename, size: typeof size === "number" ? size : null };
-}
-
-/** Where in Discord the bot received a submission. */
-function submissionOf(value: unknown): IntakeInput["submission"] {
-  if (value === undefined || value === null) return undefined;
-  if (typeof value !== "object" || Array.isArray(value)) {
-    throw invalid("submission must name the Discord server, channel, and message.", "submission");
-  }
-  const { guildId, channelId, messageId } = value as Record<string, unknown>;
-  return { guildId, channelId, messageId };
 }
 
 function text(fields: Fields, name: string): string | undefined {
@@ -145,13 +92,58 @@ function list(fields: Fields, name: string): string[] {
   return (Array.isArray(value) ? value : [value]).map(String).filter(Boolean);
 }
 
+/**
+ * Where an uploaded file came from. The bot names a Discord attachment by its
+ * ID, which is its identity for duplicate review, and may give its address
+ * for the record. Only Discord's own file hosts are accepted, and the
+ * address's query, a signature that expires, is dropped.
+ */
+function uploadSource(fields: Fields, key: string): IntakeInput["source"] {
+  const attachmentId = text(fields, "discordAttachmentId");
+  if (attachmentId === undefined) return { provider: "web_upload", key };
+  if (!DISCORD_ID.test(attachmentId)) {
+    throw invalid(
+      "discordAttachmentId must be the attachment's Discord ID.",
+      "discordAttachmentId",
+    );
+  }
+  const typed = text(fields, "discordAttachmentUrl");
+  let url: string | null = null;
+  if (typed !== undefined) {
+    let address: URL | null;
+    try {
+      address = new URL(typed);
+    } catch {
+      address = null;
+    }
+    if (!address || address.protocol !== "https:" || !isDiscordCdn(address.hostname)) {
+      throw invalid(
+        "discordAttachmentUrl must be the attachment's Discord address.",
+        "discordAttachmentUrl",
+      );
+    }
+    url = `${address.origin}${address.pathname}`;
+  }
+  return { provider: "discord_attachment", key: attachmentId, url };
+}
+
+/** Where in Discord the bot received a submission, when it says. */
+function submissionOf(fields: Fields): IntakeInput["submission"] {
+  const submission = {
+    guildId: text(fields, "submissionGuildId"),
+    channelId: text(fields, "submissionChannelId"),
+    messageId: text(fields, "submissionMessageId"),
+  };
+  return Object.values(submission).some(Boolean) ? submission : undefined;
+}
+
 function intakeFrom(archiveId: string, fields: Fields, source: IntakeInput["source"]): IntakeInput {
   const estimatedDay = text(fields, "estimatedDay");
   return {
     archiveId,
     description: fields.description,
     source,
-    submission: submissionOf(fields.submission),
+    submission: submissionOf(fields),
     exactDate: text(fields, "exactDate"),
     estimatedDate: estimatedDay ? { day: estimatedDay, reason: fields.estimateReason } : null,
     links: Object.fromEntries(LINK_FIELDS.map((name) => [name, list(fields, name)])),
@@ -197,7 +189,7 @@ export function registerIntakeRoutes(scope: FastifyInstance, options: IntakeOpti
   const base = "/api/archives/:archiveId";
   type Params = { archiveId: string };
 
-  async function duplicateReply(
+  function duplicateReply(
     actor: Actor,
     archiveId: string,
     intake: IntakeInput,
@@ -216,28 +208,15 @@ export function registerIntakeRoutes(scope: FastifyInstance, options: IntakeOpti
     return { status: "duplicate" as const, artifact: existing, differences, reviewToken };
   }
 
-  async function announce(
-    archiveId: string,
-    artifact: ArtifactDetails,
-  ): Promise<AnnouncementResult> {
-    if (!options.announce) return { status: "not_configured" };
-    try {
-      return await options.announce(archiveId, artifact);
-    } catch (error) {
-      // The artifact is saved either way; the contributor is told it was not posted.
-      options.logError("Could not announce a web upload", error);
-      return { status: "failed", reason: "The logs channel could not be reached." };
-    }
-  }
-
   scope.post<{ Params: Params }>(`${base}/artifacts/intake`, async (request, reply) => {
     const { actor, via } = await auth.requireActor(request);
     const { archiveId } = request.params;
     // Access is checked before anything is read from the upload.
-    openForActor(context, actor, archiveId);
+    const { store } = openForActor(context, actor, archiveId);
     const fields: Fields = {};
     let staging: string | null = null;
-    let upload: { path: string; filename: string; key: string } | null = null;
+    let upload: { path: string; filename: string; intake: IntakeInput } | null = null;
+    let duplicate: { intake: IntakeInput; existing: ArtifactDetails } | null = null;
     try {
       if (request.isMultipart()) {
         const parts = request.parts({
@@ -245,6 +224,9 @@ export function registerIntakeRoutes(scope: FastifyInstance, options: IntakeOpti
         });
         for await (const part of parts) {
           if (part.type !== "file") {
+            if (upload || duplicate) {
+              throw invalid("Send the fields before the file.", part.fieldname);
+            }
             const previous = fields[part.fieldname];
             fields[part.fieldname] =
               previous === undefined
@@ -253,15 +235,25 @@ export function registerIntakeRoutes(scope: FastifyInstance, options: IntakeOpti
             continue;
           }
           // Everything typed so far is checked before the file is kept.
-          const key = randomUUID();
+          let intake: IntakeInput;
           try {
             checkBotFields(fields, via);
-            const intake = intakeFrom(archiveId, fields, { provider: "web_upload", key });
+            intake = intakeFrom(archiveId, fields, uploadSource(fields, randomUUID()));
             checkIntake(context, actor, intake);
             checkZone(context, actor, intake, fields);
           } catch (error) {
             part.file.resume();
             throw error;
+          }
+          // A Discord attachment already archived is reviewed, not stored again.
+          const existing =
+            intake.source.provider === "discord_attachment"
+              ? findArtifactBySource(store.db, "discord_attachment", intake.source.key)
+              : undefined;
+          if (existing) {
+            part.file.resume();
+            duplicate = { intake, existing };
+            continue;
           }
           staging = createStagingFolder(context);
           const path = join(staging, "original");
@@ -271,7 +263,7 @@ export function registerIntakeRoutes(scope: FastifyInstance, options: IntakeOpti
               field: "file",
             });
           }
-          upload = { path, filename: part.filename, key };
+          upload = { path, filename: part.filename, intake };
         }
       } else {
         Object.assign(fields, (request.body as Fields | null) ?? {});
@@ -279,73 +271,54 @@ export function registerIntakeRoutes(scope: FastifyInstance, options: IntakeOpti
 
       checkBotFields(fields, via);
       const driveLink = text(fields, "driveLink");
-      const attachment = discordAttachment(fields.discordAttachment);
-      if ([upload, driveLink, attachment].filter(Boolean).length !== 1) {
-        throw new ArchivistError(
-          "invalid_input",
+      const hasFile = Boolean(upload || duplicate);
+      if (hasFile === Boolean(driveLink)) {
+        throw invalid(
           via === "service"
             ? "Attach one file or give one Google Drive link, not both or neither."
             : "Upload one file or give one Google Drive link, not both or neither.",
-          {
-            field: "file",
-          },
+          "file",
         );
       }
-      if (attachment && attachment.size !== null && attachment.size > MAX_MEDIA_BYTES) {
-        throw new ArchivistError("media_too_large", "Files can be at most 100 MiB.", {
-          field: "file",
-        });
+      if (!hasFile && text(fields, "discordAttachmentId") !== undefined) {
+        throw invalid("A Discord attachment needs its file.", "file");
       }
-      const link = driveLink ? parseDriveLink(driveLink) : null;
-      const intake = intakeFrom(
-        archiveId,
-        fields,
-        link
-          ? { provider: "drive", key: link.fileId, url: link.url, resourceKey: link.resourceKey }
-          : attachment
-            ? // The address's query is a signature that expires, so only the file's address is kept.
-              {
-                provider: "discord_attachment",
-                key: attachment.id,
-                url: attachment.url.split("?")[0],
-              }
-            : { provider: "web_upload", key: upload!.key },
-      );
-      checkIntake(context, actor, intake);
-      checkZone(context, actor, intake, fields);
+      if (duplicate) {
+        return reply.send(duplicateReply(actor, archiveId, duplicate.intake, duplicate.existing));
+      }
 
+      let intake: IntakeInput;
       let file: string;
       let filename: string;
-      if (attachment) {
-        const { store } = openForActor(context, actor, archiveId);
-        const existing = findArtifactBySource(store.db, "discord_attachment", attachment.id);
-        if (existing) return reply.send(await duplicateReply(actor, archiveId, intake, existing));
-        staging = createStagingFolder(context);
-        file = join(staging, "original");
-        await downloadDiscordAttachment(attachment.url, file, { fetch: options.fetch });
-        filename = attachment.filename;
-      } else if (link) {
-        const { store } = openForActor(context, actor, archiveId);
+      if (driveLink) {
+        const link = parseDriveLink(driveLink);
+        intake = intakeFrom(archiveId, fields, {
+          provider: "drive",
+          key: link.fileId,
+          url: link.url,
+          resourceKey: link.resourceKey,
+        });
+        checkIntake(context, actor, intake);
+        checkZone(context, actor, intake, fields);
         const existing = findArtifactBySource(store.db, "drive", link.fileId);
-        if (existing) return reply.send(await duplicateReply(actor, archiveId, intake, existing));
+        if (existing) return reply.send(duplicateReply(actor, archiveId, intake, existing));
         staging = createStagingFolder(context);
         file = join(staging, "original");
         const drive = new DriveClient({ apiKey: options.driveApiKey, fetch: options.fetch });
         filename = (await drive.metadata(link)).name;
         await drive.download(link, file);
       } else {
-        file = upload!.path;
-        filename = upload!.filename;
+        ({ intake, path: file, filename } = upload!);
       }
       const media = await stageMedia(context, { file, originalFilename: filename });
       const result = createArtifact(context, actor, { ...intake, media });
       if (result.status === "duplicate") {
-        return reply.send(await duplicateReply(actor, archiveId, intake, result.artifact));
+        return reply.send(duplicateReply(actor, archiveId, intake, result.artifact));
       }
       return reply.status(201).send({
         status: "created",
         artifact: result.artifact,
-        announcement: await announce(archiveId, result.artifact),
+        announcement: { status: announcementStatus(context, archiveId, result.artifact.id) },
       });
     } finally {
       if (staging) discardStaging(context, staging);

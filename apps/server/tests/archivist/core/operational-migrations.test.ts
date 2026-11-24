@@ -53,7 +53,7 @@ test("Archivist tables are added without changing AFK data", (t) => {
   const tables = db
     .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'archivist_%'")
     .all();
-  assert.equal(tables.length, 11);
+  assert.equal(tables.length, 12);
   assert.deepEqual(db.prepare("SELECT version FROM archivist_schema").get(), {
     version: OPERATIONAL_SCHEMA_VERSION,
   });
@@ -82,11 +82,35 @@ test("version 3 keeps signed-in sessions and adds the account menu's name and pi
     "INSERT INTO archivist_sessions (token_hash, discord_user_id, created_ms, expires_ms) VALUES ('h1', '200000000000000002', 1, 2)",
   ).run();
 
-  assert.deepEqual(prepareOperationalDatabase(db), { from: 2, to: 3 });
+  assert.deepEqual(prepareOperationalDatabase(db), { from: 2, to: OPERATIONAL_SCHEMA_VERSION });
   assert.deepEqual(
     db.prepare("SELECT token_hash, display_name, avatar_url FROM archivist_sessions").all(),
     [{ token_hash: "h1", display_name: null, avatar_url: null }],
   );
+});
+
+test("version 4 adds the announcement queue and keeps earlier delivery history", (t) => {
+  const db = existingBotDatabase(t);
+  // A bot database at version 3, as the bot's own build leaves it.
+  for (const migration of OPERATIONAL_MIGRATIONS.filter((m) => m.version <= 3))
+    db.exec(migration.sql);
+  db.prepare("INSERT INTO archivist_schema (singleton, version) VALUES (1, 3)").run();
+  db.prepare(
+    `INSERT INTO archivist_archives (archive_id, name, name_key, relative_path, registered_at, registered_by)
+     VALUES ('a1', 'One', 'one', 'archives/a1', '2026-11-23T00:00:00.000Z', '1')`,
+  ).run();
+  db.prepare(
+    `INSERT INTO archivist_announcements (archive_id, artifact_id, guild_id, channel_id, message_id, state)
+     VALUES ('a1', 'f1', '400000000000000004', '500000000000000005', '600000000000000006', 'sent')`,
+  ).run();
+
+  assert.deepEqual(prepareOperationalDatabase(db), { from: 3, to: 4 });
+  assert.deepEqual(db.prepare("SELECT artifact_id, state FROM archivist_announcements").all(), [
+    { artifact_id: "f1", state: "sent" },
+  ]);
+  assert.deepEqual(db.prepare("SELECT count(*) AS n FROM archivist_announcement_queue").get(), {
+    n: 0,
+  });
 });
 
 test("a newer Archivist schema is refused and AFK data is left alone", (t) => {

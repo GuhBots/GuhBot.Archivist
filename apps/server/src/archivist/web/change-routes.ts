@@ -2,7 +2,14 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { deleteArtifact, updateArtifact } from "../artifacts.js";
 import { flagForResearch, updateGapCard } from "../board.js";
 import type { Actor, ArchivistContext } from "../context.js";
-import { archiveDay, needsZoneConfirmation, parseDateInput } from "../dates.js";
+import {
+  archiveDay,
+  localDateTime,
+  localText,
+  needsZoneConfirmation,
+  offsetLabel,
+  parseDateInput,
+} from "../dates.js";
 import {
   createAccount,
   createCharacter,
@@ -286,8 +293,9 @@ export function registerChangeRoutes(
 
   /**
    * How a typed date will be read, with the contributor's own timezone and
-   * date order, so a form can show it before saving. Discord confirms a
-   * time typed without a zone; the website shows this instead.
+   * date order, so a form can show it before saving. A date and time also
+   * comes with its wall-clock reading, zone, and offset, which Discord shows
+   * when it asks to confirm a time typed without a zone.
    */
   scope.get<{ Params: Params; Querystring: Body }>(`${base}/date-preview`, async (request) => {
     const actor = await actorOf(request);
@@ -304,6 +312,14 @@ export function registerChangeRoutes(
       value,
       archiveDay: archiveDay(value, details.timezone),
       assumedZone: needsZoneConfirmation(text, order),
+      display:
+        value.kind === "instant"
+          ? {
+              local: localText(localDateTime(value.instantMs, value.timezone)),
+              zone: value.timezone,
+              offset: offsetLabel(value.instantMs, value.timezone),
+            }
+          : null,
     };
   });
 }

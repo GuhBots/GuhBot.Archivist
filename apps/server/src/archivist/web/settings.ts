@@ -1,9 +1,8 @@
 import { ArchivistError } from "../errors.js";
 
 /**
- * The web listener's settings, read from the environment by `config.ts`.
- * They are checked when the owner starts the listener, not at bot startup,
- * because the bot runs normally without the website.
+ * The web listener's settings, read from the environment by the service's
+ * settings module and checked before the listener starts.
  */
 export interface WebSettings {
   /** The address to listen on. `127.0.0.1` for local testing. */
@@ -52,7 +51,7 @@ export function checkWebSettings(settings: WebSettings): void {
   if (missing.length > 0) {
     throw new ArchivistError(
       "invalid_input",
-      `Set ${missing.join(", ")} in the bot's environment before starting the website. The Discord setup guide explains each one.`,
+      `Set ${missing.join(", ")} in the service's environment before starting it. The self-hosting guide explains each one.`,
       { reason: "missing_settings", missing },
     );
   }

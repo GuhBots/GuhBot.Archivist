@@ -3,12 +3,11 @@ import type { FastifyInstance } from "fastify";
 import { ArchivistError } from "../errors.js";
 
 /**
- * The one web listener in the bot process. Only the owner starts and stops
- * it, and a bot restart leaves it stopped, so nothing here persists. A
- * repeated start reports the running listener, and a repeated stop reports
- * that it is stopped. Starts and stops run one at a time, so they never
- * interleave. Stopping closes web access only. Discord contributions and
- * saved archive data are unaffected.
+ * The service's one web listener. The service starts it once and stops it on
+ * shutdown, so nothing here persists. A repeated start reports the running
+ * listener, and a repeated stop reports that it is stopped. Starts and stops
+ * run one at a time, so they never interleave. Stopping waits for requests in
+ * progress and leaves saved archive data unaffected.
  */
 
 export interface WebStatus {
@@ -82,18 +81,18 @@ export class WebListener {
   }
 }
 
-/** A start failure the owner can act on. The bot keeps running either way. */
+/** A start failure the owner can act on, naming the setting to change. */
 function listenError(error: unknown, host: string, port: number): ArchivistError {
   const code = (error as NodeJS.ErrnoException | null)?.code;
   const where = `${host}:${port}`;
   const message =
     code === "EADDRINUSE"
-      ? `Something else is already using ${where}. Stop it, or set ARCHIVIST_PORT to a free port and restart the bot, then start the website again.`
+      ? `Something else is already using ${where}. Stop it, or set ARCHIVIST_PORT to a free port and start the service again.`
       : code === "EACCES"
-        ? `The bot is not allowed to listen on ${where}. Use a port above 1023, or set ARCHIVIST_HOST to an address it may use.`
+        ? `The service is not allowed to listen on ${where}. Use a port above 1023, or set ARCHIVIST_HOST to an address it may use.`
         : code === "EADDRNOTAVAIL"
           ? `${host} is not an address of this machine. Set ARCHIVIST_HOST to 127.0.0.1, or to 0.0.0.0 in a container.`
-          : `The website could not start on ${where}. The bot's log has the details.`;
+          : `The website could not start on ${where}. The service's log has the details.`;
   return new ArchivistError("dependency_unavailable", message, {
     reason: code === "EADDRINUSE" ? "port_in_use" : "listen_failed",
     host,

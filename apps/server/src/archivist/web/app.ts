@@ -3,11 +3,11 @@ import { join } from "node:path";
 import fastifyCookie from "@fastify/cookie";
 import fastifyMultipart from "@fastify/multipart";
 import fastifyStatic from "@fastify/static";
-import Fastify, { type FastifyError, type FastifyInstance } from "fastify";
+import Fastify, { type FastifyError, type FastifyInstance, type FastifyRequest } from "fastify";
 import type { ArchivistContext } from "../context.js";
 import { ArchivistError } from "../errors.js";
 import { MAX_MEDIA_BYTES } from "../media.js";
-import { type Auth, createAuth } from "./auth.js";
+import { type Auth, type AuthOptions, createAuth } from "./auth.js";
 import { registerChangeRoutes } from "./change-routes.js";
 import { type IntakeOptions, registerIntakeRoutes } from "./intake-routes.js";
 import { registerMediaRoutes } from "./media-routes.js";
@@ -18,29 +18,42 @@ import { basePathOf, redirectUriOf, type WebSettings } from "./settings.js";
 
 /**
  * The website's HTTP app: sign-in, the JSON routes under `/api`, and the
- * built frontend for every other page, all under the base path. Routes call
- * the same shared operations as the Discord commands, so both apply the same
- * rules. Nothing here depends on the Discord bot, so the website can later
- * run as its own service.
+ * built frontend for every other page, all under the base path. Browsers and
+ * the Discord bot reach the same routes, which call the shared operations,
+ * so every interface applies the same rules. Nothing here depends on the
+ * Discord bot.
  */
 
 export interface WebAppOptions {
   context: ArchivistContext;
-  /** Already checked with `checkWebSettings`. */
+  /**
+   * The listener's settings. `sessionSecret` signs cookies and is required.
+   * Discord sign-in is offered only when both client settings are present.
+   */
   settings: WebSettings;
-  /** Whether a Discord user owns the bot's application. */
+  /** Whether a Discord user is one of the service's owners. */
   isOwner(userId: string): Promise<boolean>;
-  /** The built frontend (`build/web`). Pages show a short notice when it has not been built. */
+  /** Identifies requests that carry no session cookie, such as the bot's. See `AuthOptions`. */
+  identify?: AuthOptions["identify"];
+  /**
+   * Whether a request carries another service's credential, such as the
+   * bot's. Such requests send no cookie, so a cross-site page cannot forge
+   * them, and they skip the same-origin check. Throws for a wrong credential.
+   */
+  hasServiceCredential?(request: FastifyRequest): boolean;
+  /** Adds routes or hooks under the base path, such as the bot's API. */
+  extend?(scope: FastifyInstance, auth: Auth): void;
+  /** The built frontend. Pages show a short notice when it has not been built. */
   frontendRoot: string;
   /** Records unexpected failures. Their details never reach the browser. */
   logError(message: string, error: unknown): void;
   /** Replaced in tests, which stand in for Discord and Google Drive. */
   fetch?: Fetch;
-  /** Posts web uploads to the logs channel. The bot provides it. */
+  /** Arranges a new artifact's announcement in its archive's logs channel. */
   announce?: IntakeOptions["announce"];
-  /** Checks a Discord channel chosen for announcements. The bot provides it. */
+  /** Checks a Discord channel a browser chose for announcements. Without it, browsers are refused. */
   checkAnnouncementChannel?: IntakeOptions["checkAnnouncementChannel"];
-  /** Switches Drive links to Google's official API, as in Discord. */
+  /** Switches Drive links to Google's official API. */
   driveApiKey?: string;
 }
 
@@ -92,6 +105,7 @@ export function buildWebApp(options: WebAppOptions): WebApp {
   // every such request, so a cross-site form or script is refused.
   app.addHook("onRequest", async (request) => {
     if (SAFE_METHODS.has(request.method)) return;
+    if (options.hasServiceCredential?.(request)) return;
     const from = request.headers.origin;
     const sameSite =
       from === origin || (!from && request.headers["sec-fetch-site"] === "same-origin");
@@ -130,11 +144,15 @@ export function buildWebApp(options: WebAppOptions): WebApp {
 
   const auth = createAuth({
     context: options.context,
-    oauth: {
-      clientId: settings.discordClientId!,
-      clientSecret: settings.discordClientSecret!,
-      redirectUri: redirectUriOf(settings.baseUrl),
-    },
+    oauth:
+      settings.discordClientId && settings.discordClientSecret
+        ? {
+            clientId: settings.discordClientId,
+            clientSecret: settings.discordClientSecret,
+            redirectUri: redirectUriOf(settings.baseUrl),
+          }
+        : undefined,
+    identify: options.identify,
     basePath,
     secure: origin.startsWith("https:"),
     isOwner: options.isOwner,
@@ -169,6 +187,7 @@ export function buildWebApp(options: WebAppOptions): WebApp {
         fetch: options.fetch ?? fetch,
         logError: options.logError,
       });
+      options.extend?.(scope, auth);
       scope.setNotFoundHandler((request, reply) => {
         const path = (request.url.split("?")[0] ?? "").slice(basePath.length);
         if (

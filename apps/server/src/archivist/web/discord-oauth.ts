@@ -2,7 +2,7 @@ import { ArchivistError } from "../errors.js";
 
 /**
  * Discord sign-in over plain HTTPS, with no Discord library, so the website
- * can run apart from the bot. Only the `identify` scope is requested. The
+ * runs apart from the bot. Only the `identify` scope is requested. The
  * access token is used once to learn who signed in and is then revoked, so
  * Archivist keeps no Discord credentials for anyone.
  */

@@ -1,7 +1,7 @@
 import type { Migration } from "./runner.js";
 
 /** The newest operational schema version this build can read and write. */
-export const OPERATIONAL_SCHEMA_VERSION = 3;
+export const OPERATIONAL_SCHEMA_VERSION = 4;
 
 /**
  * Ordered migrations for Archivist's tables in the bot's `guhbot.db`. They only
@@ -114,6 +114,25 @@ export const OPERATIONAL_MIGRATIONS: readonly Migration[] = [
     sql: `
     ALTER TABLE archivist_sessions ADD COLUMN display_name TEXT;
     ALTER TABLE archivist_sessions ADD COLUMN avatar_url TEXT;
+    `,
+  },
+  {
+    // The service and the Discord bot run apart, so a new artifact's post waits
+    // here, with the channel set when the artifact was saved, until the bot
+    // claims it. Claiming moves it to archivist_announcements as pending.
+    version: 4,
+    sql: `
+    CREATE TABLE archivist_announcement_queue (
+      archive_id TEXT NOT NULL REFERENCES archivist_archives(archive_id) ON DELETE CASCADE,
+      artifact_id TEXT NOT NULL,
+      guild_id TEXT NOT NULL,
+      channel_id TEXT NOT NULL,
+      queued_at TEXT NOT NULL,
+      PRIMARY KEY (archive_id, artifact_id)
+    );
+
+    CREATE INDEX archivist_announcement_queue_order
+      ON archivist_announcement_queue(queued_at, archive_id, artifact_id);
     `,
   },
 ];

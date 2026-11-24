@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import type { ArchivistContext } from "../context.js";
 
 /**
- * Website sessions and sign-in states in the bot's operational database.
+ * Website sessions and sign-in states in the operational database.
  * Only a SHA-256 hash of each token is stored, so a copy of the database
  * cannot be used to sign in. Sessions last seven days from sign-in and are
  * never extended. Discord sign-in alone grants no archive access: every

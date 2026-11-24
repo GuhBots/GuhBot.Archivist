@@ -230,6 +230,11 @@ export interface CharacterView {
   accounts: AccountView[];
   /** Every picture they have had, oldest first: account avatars, then the fallback picture. */
   pictures: { mediaId: string; date: StoredDate | null; accountId: string | null }[];
+  /**
+   * Characters this one introduced, oldest first. Each introduction belongs to
+   * the history of the character who was introduced, so it is changed there.
+   */
+  introduced: { characterId: string; knownName: string; date: StoredDate | null }[];
   createdAt: string;
   createdBy: string;
 }
@@ -356,7 +361,7 @@ export function entityView(
          fallback_media_id AS fallbackMediaId, created_at AS createdAt, created_by AS createdBy
        FROM characters WHERE id = ?`,
     )
-    .get(id) as Omit<CharacterView, "kind" | "history" | "accounts" | "pictures">;
+    .get(id) as Omit<CharacterView, "kind" | "history" | "accounts" | "pictures" | "introduced">;
   const accounts = (
     db.prepare("SELECT id FROM accounts WHERE character_id = ? ORDER BY label, id").all(id) as {
       id: string;
@@ -378,11 +383,23 @@ export function entityView(
   }));
   if (row.fallbackMediaId)
     pictures.push({ mediaId: row.fallbackMediaId, date: null, accountId: null });
+  const introduced = (
+    db
+      .prepare(
+        `SELECT c.id AS characterId, c.known_name AS knownName, i.date_id AS dateId
+         FROM introductions i JOIN characters c ON c.id = i.introduced_id
+         LEFT JOIN date_values d ON d.id = i.date_id
+         WHERE i.introducer_id = ?
+         ORDER BY d.archive_day IS NULL, d.archive_day, c.known_name, c.id`,
+      )
+      .all(id) as { characterId: string; knownName: string; dateId: string | null }[]
+  ).map(({ dateId, ...rest }) => ({ ...rest, date: dateId ? readDate(db, dateId) : null }));
   return {
     ...row,
     kind: "character",
     history: listHistory(db, "character", id),
     accounts,
     pictures,
+    introduced,
   };
 }

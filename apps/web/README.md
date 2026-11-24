@@ -48,3 +48,19 @@ Edit Place changes the base name, Discord ID, lane color, dated names, and serve
 ## Heatmap
 
 The heatmap shows a selected year's artifacts and event starts in separate monthly calendars. A duration or occurrence window counts once, on its start or earliest possible day. Dashed outlines identify estimates and file dates. Undated artifacts are counted separately. The tray changes the year, cell size, and shared filters. Selecting a day opens the timeline with those filters.
+
+## Graph
+
+Characters are nodes, with a picture when one is known. The tray toggles four layers: shared artifacts, shared events, introductions, and servers where both were members at the same time. A membership with no join date is left out, and one with no leave date continues. The tray also hides pairs with fewer than one, three, or five shared artifacts. The layout is the approved deterministic one in `src/views/graph-layout.ts`: every pair pushes apart and each visible connection pulls its pair together, so the same data always draws the same picture. The pull only places nodes, and no strength score is shown. Large archives take fewer layout steps so the page stays responsive.
+
+Pointing at a character lights up their connections. Selecting one focuses it and links to their page. Selecting a line opens an album of the artifacts the two share under the current filters, or lists the events, introductions, and memberships that connect them when they share none. The wheel or a pinch zooms around the pointer, dragging pans, and the tray zooms out, in, and to fit. `/a/<archive>/graph?focus=<character>` opens it focused on a character.
+
+## Board
+
+The research board lists missing-media requests and gap cards in Needed, Resolved, and Unrecoverable, highest priority first. Gap cards that follow the data clear by themselves. Date-research flags are marked done by hand. A request moves to Unrecoverable with a reason, resolves when a contributor links the artifact that has the media, including from Unrecoverable, and can be reopened. The tray adds a request, flags an artifact's date for research, and shows all cards, only requests, or only gaps. Nobody is assigned anything.
+
+## Character Page
+
+A character's page shows their facts, picture, aliases, main accounts, each account's dated names, avatars, and memberships, who introduced them and whom they introduced, and their artifacts and events. The picture is the latest one known and says where it comes from. Selecting it opens every picture they have had, oldest first, with arrow keys to step through. Originals are shown, so GIF avatars play.
+
+Edit History adds and removes dated entries, saves the facts, uploads avatars and the fallback picture, links an existing account or adds a new one, and merges a duplicate character after reviewing every difference. Each change checks the version just loaded. An introduction this character made is changed on the page of the character who was introduced. The tray shows the character on the timeline or the graph.

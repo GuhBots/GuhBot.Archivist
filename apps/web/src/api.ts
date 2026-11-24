@@ -15,6 +15,7 @@ export type {
 } from "../../server/src/archivist/entity-views.js";
 export type { EventDetails } from "../../server/src/archivist/events.js";
 export type { HistoryEntry, Picture } from "../../server/src/archivist/history.js";
+export type { MergePreview } from "../../server/src/archivist/merge.js";
 export type {
   ArtifactPage,
   ArtifactSummary,

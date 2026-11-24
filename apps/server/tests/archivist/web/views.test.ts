@@ -14,6 +14,7 @@ import { addHistory } from "../../../src/archivist/history.js";
 import { createStagingFolder, stageMedia } from "../../../src/archivist/media.js";
 import { addMember } from "../../../src/archivist/members.js";
 import { closeMetadataReader } from "../../../src/archivist/metadata.js";
+import type { CharacterView } from "../../../src/archivist/entity-views.js";
 import type { DayCounts, GraphView, TimelineView } from "../../../src/archivist/views.js";
 import { MEMBER, OWNER } from "../helpers/context.js";
 import { closeFixtureWriter, writeImage } from "../helpers/media.js";
@@ -362,4 +363,19 @@ test("the graph counts shared artifacts and events, introductions, and overlappi
     `/artifacts?withCharacter=${sam.id}&withCharacter=${lee.id}`,
   );
   assert.deepEqual(album.items.map((i) => i.id).sort(), [a1.id, a2.id].sort());
+});
+
+test("a character page lists the introductions the character made as well as received", async (t) => {
+  const { get, sam, lee } = await world(t);
+  const leePage = await get<CharacterView>(`/entities/character/${lee.id}`);
+  assert.deepEqual(
+    leePage.introduced.map((i) => [i.characterId, i.knownName, i.date?.archiveDay]),
+    [[sam.id, "Sam", "2019-08-02"]],
+  );
+  const samPage = await get<CharacterView>(`/entities/character/${sam.id}`);
+  assert.deepEqual(samPage.introduced, []);
+  assert.deepEqual(
+    samPage.history.filter((e) => e.kind === "introduction").map((e) => e.targetId),
+    [lee.id],
+  );
 });

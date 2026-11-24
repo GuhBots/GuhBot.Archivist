@@ -5,14 +5,15 @@
   "private": true,
   "type": "module",
   "workspaces": [
-    "apps/server"
+    "apps/server",
+    "apps/web"
   ],
   "engines": {
     "node": ">=22.12"
   },
   "scripts": {
-    "build": "npm run build --workspace apps/server",
-    "typecheck": "npm run typecheck --workspace apps/server",
+    "build": "npm run build --workspace apps/server && npm run build --workspace apps/web",
+    "typecheck": "npm run typecheck --workspace apps/server && npm run typecheck --workspace apps/web",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check": "npm run typecheck && npm run format:check",

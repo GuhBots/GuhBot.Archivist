@@ -1,0 +1,22 @@
+{
+  "name": "@guhbot/archivist-web",
+  "version": "0.1.0",
+  "description": "The Archivist website's pages, built with Vite and served by the Archivist service.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "4.3.5",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.3.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "tailwindcss": "4.3.5",
+    "vite": "8.3.8"
+  }
+}

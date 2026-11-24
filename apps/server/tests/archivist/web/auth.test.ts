@@ -209,6 +209,7 @@ test("signing in with Discord creates a seven-day session and keeps no Discord t
       avatarUrl: `https://cdn.discordapp.com/avatars/${MEMBER.userId}/a_abc.gif?size=128`,
     },
     isOwner: false,
+    via: "session",
     sessionExpires: new Date(NOW.getTime() + 7 * 24 * 3600_000).toISOString(),
     preferences: { timeZone: null, dateOrder: "ymd" },
   });

@@ -9,6 +9,7 @@ Automated tests for the Archivist service, run with the Node.js built-in test ru
 | `archivist/core/` | Archive storage, migrations, and shared rules, tested against temporary databases and folders |
 | `archivist/web/` | The website's listener, sign-in, and routes, with Discord and Google Drive replaced by stand-ins |
 | `archivist/helpers/` | Shared test helpers, such as temporary directories that are removed after each test |
+| `archivist/e2e/` | A made-up archive and a script that serves the built website on it for browser checks, described in the [website README](../../web/README.md#trying-it-without-discord) |
 
 The `archivist/` tests came from GuhBot.Discord with the code they cover. The Discord adapter tests stayed in the bot.
 

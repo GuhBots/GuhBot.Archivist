@@ -1,11 +1,9 @@
-import { parseArgs } from "node:util";
 import { closeArchivistContext, createArchivistContext } from "../archivist/context.js";
 import { ArchivistError } from "../archivist/errors.js";
 import { basePathOf } from "../archivist/web/settings.js";
 import { readConfig } from "./config.js";
 import { importBotState } from "./import-bot-state.js";
 import { openOperationalDatabase, serve } from "./server.js";
-import { DEFAULT_VIEWER_PORT, startViewer } from "./viewer.js";
 
 /**
  * The Archivist command line. `serve` runs the service from the settings in
@@ -16,8 +14,6 @@ const USAGE = `Usage: archivist <command>
 
 Commands:
   serve                                Run the Archivist service with the settings in the environment.
-  view <folder>... [--port <port>] [--host <address>]
-                                       Open archive folders read-only in a website on this computer.
   import-bot-state <path to guhbot.db> Copy Archivist's registry, whitelists, and preferences from the
                                        bot's database into this service's data directory.
   healthcheck                          Exit successfully when the running service answers.
@@ -49,23 +45,6 @@ async function runServe(): Promise<void> {
   const service = await serve({ config });
   stopOnSignal(service.close);
   console.log(`Archivist is running at ${config.web.baseUrl}`);
-}
-
-async function runView(args: string[]): Promise<void> {
-  const { values, positionals } = parseArgs({
-    args,
-    allowPositionals: true,
-    options: { port: { type: "string" }, host: { type: "string" } },
-  });
-  const port = values.port === undefined ? DEFAULT_VIEWER_PORT : Number(values.port);
-  if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    throw new ArchivistError("invalid_input", "--port must be a port number from 1 to 65535.");
-  }
-  const viewer = await startViewer({ folders: positionals, port, host: values.host });
-  stopOnSignal(viewer.close);
-  for (const archive of viewer.archives)
-    console.log(`Opened ${archive.name} from ${archive.folder}`);
-  console.log(`The archive viewer is at ${viewer.url}. Press Ctrl+C to stop it.`);
 }
 
 async function runImport(args: string[]): Promise<void> {
@@ -119,8 +98,6 @@ async function main(argv: string[]): Promise<void> {
   switch (command) {
     case "serve":
       return runServe();
-    case "view":
-      return runView(args);
     case "import-bot-state":
       return runImport(args);
     case "healthcheck":

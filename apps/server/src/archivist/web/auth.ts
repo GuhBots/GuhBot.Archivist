@@ -34,15 +34,14 @@ import {
 /**
  * Discord sign-in, sign-out, and the signed-in contributor's own settings.
  * Routes elsewhere call `requireActor` to find who is asking: a browser
- * signed in with Discord, the Discord bot with its service credential, or
- * the local viewer's fixed contributor.
+ * signed in with Discord, or the Discord bot with its service credential.
  */
 
 export const SESSION_COOKIE = "archivist_session";
 const STATE_COOKIE = "archivist_signin";
 
 /** How a request proved who it acts for. */
-export type Via = "session" | "service" | "local";
+export type Via = "session" | "service";
 
 /** A request identified without a session cookie, such as by the bot's service credential. */
 export interface Delegated {
@@ -63,7 +62,7 @@ export interface Identified {
 
 export interface AuthOptions {
   context: ArchivistContext;
-  /** Discord sign-in. Without it, the sign-in routes are not offered, as in the local viewer. */
+  /** Discord sign-in. Without it, the sign-in routes are not offered. */
   oauth?: OAuthSettings;
   /** The path the website lives under, or an empty string. */
   basePath: string;

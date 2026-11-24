@@ -1,7 +1,7 @@
 {
   "name": "guhbot-archivist",
   "version": "0.1.0",
-  "description": "GuhBot Archivist: the archive service, its website and API, and a local archive viewer.",
+  "description": "GuhBot Archivist: the archive service, its website, and its API.",
   "private": true,
   "type": "module",
   "workspaces": [
@@ -14,7 +14,6 @@
   "scripts": {
     "build": "npm run build --workspace apps/server && npm run build --workspace apps/web",
     "start": "node --env-file-if-exists=.env apps/server/build/service/main.js serve",
-    "view": "node apps/server/build/service/main.js view",
     "import-bot-state": "node --env-file-if-exists=.env apps/server/build/service/main.js import-bot-state",
     "typecheck": "npm run typecheck --workspace apps/server && npm run typecheck --workspace apps/web",
     "format": "prettier --write .",

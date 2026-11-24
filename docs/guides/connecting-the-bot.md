@@ -49,11 +49,36 @@ Remove `ARCHIVIST_SERVICE_TOKEN` from Archivist's `.env` and restart Archivist. 
 | --- | --- |
 | Another machine | The public address, the same as Archivist's `ARCHIVIST_BASE_URL`, such as `https://guhbot.example.com/archivist`. Always HTTPS |
 | The same machine | The loopback address Archivist publishes, such as `http://127.0.0.1:3000`, when the bot runs outside a container. Add the path when `ARCHIVIST_BASE_URL` has one |
-| The same Docker network | The service's name and port, such as `http://archivist:3000`, with the path when there is one |
+| Another container on the same machine | `http://archivist:3000` over the shared network that `compose.local.yaml` sets up, as [Trying Both on One Machine](#trying-both-on-one-machine) describes, with the path when there is one |
 
 A private address avoids the Cloudflare upload limit described in [Self-Hosting](self-hosting.md#your-own-domain-with-cloudflare-tunnel), because the bot's uploads then never pass through Cloudflare. A private network does not replace the token: the bot sends it either way.
 
 The bot refuses to follow redirects, so the address must be exact. If `/archivist-admin status` reports a redirect, the address is missing its path or uses `http` where Cloudflare redirects to `https`.
+
+## Trying Both on One Machine
+
+To run the service and the bot as two separate containers on one computer, such as a laptop, put them on a shared Docker network. Each repository has a `compose.local.yaml` that joins the network named `guhbot`, where the bot finds Archivist under the name `archivist`. Each still has its own data volume.
+
+1. Create the network once.
+
+   ```sh
+   docker network create guhbot
+   ```
+
+2. In both repositories' `.env`, load the local file with the others.
+
+   ```sh
+   COMPOSE_FILE=compose.yaml:compose.override.yaml:compose.local.yaml
+   ```
+
+3. In the bot's `.env`, set `ARCHIVIST_API_URL=http://archivist:3000` and the same `ARCHIVIST_SERVICE_TOKEN` as Archivist's.
+4. Start Archivist first, then the bot, each from its own repository.
+
+   ```sh
+   docker compose up -d --build
+   ```
+
+Browsers still use `ARCHIVIST_BASE_URL`, such as `http://localhost:3000`. Run `docker compose down` in each repository to stop them. The network stays until `docker network rm guhbot`.
 
 ## What Changes for Contributors
 

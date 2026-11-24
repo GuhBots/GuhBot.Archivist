@@ -334,13 +334,7 @@ function AccountMenu(props: { onClose(): void }) {
   return (
     <div ref={box} className="popover account-menu" role="dialog" aria-label="Your account">
       <strong>{me.user.name ?? "Signed in"}</strong>
-      <span className="hint">
-        {me.via === "local"
-          ? "Local viewer. Archives open read-only, and preferences last until it stops."
-          : me.isOwner
-            ? "Owner"
-            : "Archive member"}
-      </span>
+      <span className="hint">{me.isOwner ? "Owner" : "Archive member"}</span>
       <label className="field">
         <span>All-number dates such as 03/04/2019</span>
         <select

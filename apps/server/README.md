@@ -8,7 +8,7 @@ The Archivist service's server side: archive storage and rules, and the website'
 | --- | --- |
 | `src/archivist/` | Archive storage and rules, described in its [README](src/archivist/README.md) |
 | `src/archivist/web/` | The website's server side, described in its [README](src/archivist/web/README.md) |
-| `src/service/` | The standalone service: settings, the command line, the bot's credential and routes, the local viewer, and the import from the bot, described in its [README](src/service/README.md) |
+| `src/service/` | The standalone service: settings, the command line, the bot's credential and routes, and the import from the bot, described in its [README](src/service/README.md) |
 | `tests/` | Automated tests, described in [Tests](tests/README.md) |
 
 The website's pages are a separate workspace, [`apps/web`](../web/README.md), which this server serves once built.

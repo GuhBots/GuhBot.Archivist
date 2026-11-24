@@ -1,17 +1,16 @@
 # Service
 
-The standalone Archivist service: its settings, its entry point and command line, the Discord bot's credential and routes, and the tools for the owner's machine. It builds the website's app from [`../archivist/web/`](../archivist/web/README.md) and adds what only a separate service needs.
+The standalone Archivist service: its settings, its entry point and command line, and the Discord bot's credential and routes. It builds the website's app from [`../archivist/web/`](../archivist/web/README.md) and adds what only a separate service needs.
 
 | File | Contents |
 | --- | --- |
-| `main.ts` | The command line: `serve`, `view`, `import-bot-state`, and `healthcheck` |
+| `main.ts` | The command line: `serve`, `import-bot-state`, and `healthcheck` |
 | `config.ts` | Settings from environment variables, the only place that reads them, and the checks `serve` runs before starting |
 | `server.ts` | Builds the service's app and runs it: the operational database, routine cleanup, the listener, and shutdown |
 | `service-auth.ts` | The bot's credential: the bearer service token and the `X-Archivist-User` it acts for |
 | `bot-routes.ts` | Routes the Discord commands need beyond the website's: the remembered archive, lookups for autocomplete, summaries, and deletion checks |
 | `admin-routes.ts` | Owner administration: archives, whitelists, and exports |
 | `announcement-routes.ts` | The bot's side of upload announcements: claiming queued posts, their previews, and reporting how each post went |
-| `viewer.ts` | The local viewer, which opens archive folders read-only without sign-in |
 | `import-bot-state.ts` | The one-time import of Archivist's operational rows from the bot's `guhbot.db` |
 
 ## Behavior
@@ -22,7 +21,6 @@ The standalone Archivist service: its settings, its entry point and command line
 * **Announcements.** Creating an artifact queues its announcement through the archive mutation's journal, so a crash between saving the artifact and queueing the post is repaired before the next change. The queue keeps a snapshot of the artifact as submitted. A claim not reported within ten minutes becomes indeterminate and is never handed out again.
 * **Routine work.** At start and every minute, the service removes abandoned upload folders and settles expired claims. At start it also marks exports a restart interrupted as failed.
 * **The operational database.** `operational.db` in the data directory, in WAL mode. It never goes into an export.
-* **The local viewer.** Copies each archive's database into a temporary folder, migrates the copy if it is older, links the media folder, and refuses every change except the viewer's own preferences. The folders it opens are never written.
 
 ## Tests
 

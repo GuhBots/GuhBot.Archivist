@@ -25,6 +25,7 @@ The repository is an npm workspaces monorepo.
 ├── tools/             Repository checks
 ├── Dockerfile         Development, build, and runtime images
 ├── compose.yaml       How servers run the service, with an optional Cloudflare Tunnel
+├── compose.local.yaml Lets a bot container on the same machine reach the service
 └── .env.example       Every setting, with placeholders
 ```
 
@@ -57,14 +58,9 @@ Run these from the repository root, inside the dev container or with Node.js 22.
 | `npm test` | Run every server test suite |
 | `npm run test:core`, `test:web`, `test:service` | Run one suite: archive rules, website routes, or the standalone service and bot API |
 | `npm run import-bot-state -- <guhbot.db>` | Copy Archivist's registry, whitelists, and preferences from the bot's database, as [Moving From the Bot](docs/guides/moving-from-the-bot.md) describes |
-| `npm run view -- <folder>` | Open archive folders read-only in a website on this computer, as [Viewing Archives Locally](#viewing-archives-locally) describes |
 | `python3 tools/scripts/run_checks.py` | Check Markdown acronyms, links, and whitespace, as [Tools](tools/README.md) describes |
 
 To run the service locally, copy `.env.example` to `.env` and fill in the Discord sign-in application, a session secret, and your own Discord user ID as the owner. Register `http://localhost:3000/auth/discord/callback` as a redirect in the Discord application. Then run `npm run build` and `npm start`, and open `http://localhost:3000`.
-
-## Viewing Archives Locally
-
-`npm run view -- <folder>` opens one or more archive folders, such as an unzipped export, in a website at `http://localhost:3001`, with no sign-in, settings, or Discord. It copies each archive's database to a temporary folder, reads media in place, and refuses every change, so the folders stay exactly as they were. Pass `--port` to use another port. Unzip an export first and open the folder it makes.
 
 ## Image and Releases
 

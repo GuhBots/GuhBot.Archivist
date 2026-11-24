@@ -17,7 +17,7 @@ The website's server side: sign-in, the JSON routes, media, and the built pages.
 | `view-routes.ts` | The timeline, calendar, heatmap, and graph data |
 | `discord-oauth.ts` | Discord's OAuth endpoints over plain HTTPS: the sign-in link, code exchange, identity, and token revocation |
 
-The service passes in what this app cannot decide by itself: who the owners are, how a request carrying the bot's service credential names its contributor, and, in the local viewer, a fixed local contributor in place of Discord sign-in. A browser cannot set the logs channel, because only the bot can check a Discord channel's permissions.
+The service passes in what this app cannot decide by itself: who the owners are, and how a request carrying the bot's service credential names its contributor. A browser cannot set the logs channel, because only the bot can check a Discord channel's permissions.
 
 ## Behavior
 

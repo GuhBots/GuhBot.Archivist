@@ -1,40 +1,77 @@
-# Runs the published service image. See docs/guides/self-hosting.md.
+# Runs the published Archivist image. See docs/guides/self-hosting.md.
 #
 #   Start:   docker compose up -d
 #   Update:  docker compose up -d --pull always
 #   Stop:    docker compose down
+#
+# With the optional Cloudflare Tunnel, add --profile tunnel to every command,
+# such as docker compose --profile tunnel up -d.
 #
 # Servers need only this file and a .env file. In a clone of the repository,
 # compose.override.yaml adds a local build: docker compose up -d --build
 
 services:
   app:
-    # Replace the repository path when adopting the template. GitHub container
-    # registry names are lowercase. APP_VERSION selects the tag.
-    image: ghcr.io/gavintranquilino/template-service:${APP_VERSION:-latest}
+    # GitHub container registry names are lowercase. APP_VERSION selects the tag.
+    image: ghcr.io/guhbots/guhbot.archivist:${APP_VERSION:-latest}
     # Settings and secrets passed to the service. List each one here and in
     # .env.example. Docker Compose reads the values from .env in this folder,
     # or from the variables entered in a tool such as Portainer or Unraid.
-    # Use ${NAME:?message} for required values, so that a missing one stops
-    # the start with a clear error.
     environment:
       APP_VERSION: ${APP_VERSION:-latest}
-      # EXAMPLE_API_TOKEN: ${EXAMPLE_API_TOKEN:?Set EXAMPLE_API_TOKEN in .env}
+      ARCHIVIST_BASE_URL: ${ARCHIVIST_BASE_URL:?Set ARCHIVIST_BASE_URL in .env}
+      ARCHIVIST_OWNER_IDS: ${ARCHIVIST_OWNER_IDS:?Set ARCHIVIST_OWNER_IDS in .env}
+      DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID:?Set DISCORD_CLIENT_ID in .env}
+      DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET:?Set DISCORD_CLIENT_SECRET in .env}
+      ARCHIVIST_SESSION_SECRET: ${ARCHIVIST_SESSION_SECRET:?Set ARCHIVIST_SESSION_SECRET in .env}
+      # Empty turns the Discord bot's access off. The website keeps working.
+      ARCHIVIST_SERVICE_TOKEN: ${ARCHIVIST_SERVICE_TOKEN:-}
+      GOOGLE_DRIVE_API_KEY: ${GOOGLE_DRIVE_API_KEY:-}
+      # The container always listens on 0.0.0.0:3000. ARCHIVIST_PUBLISH below
+      # decides who can reach it.
+      ARCHIVIST_HOST: 0.0.0.0
+      ARCHIVIST_PORT: "3000"
     restart: unless-stopped
     # Runs a small init process that passes stop signals to the service.
     init: true
     volumes:
       - data:/data
-    # Publish the ports the service listens on, as HOST:CONTAINER.
-    # ports:
-    #   - "8080:8080"
-    # Let Docker report whether the service is working.
-    # healthcheck:
-    #   test: ["CMD", "/app/healthcheck"]
-    #   interval: 30s
-    #   timeout: 5s
-    #   retries: 3
+    # HOST:CONTAINER. The default publishes on the host's loopback address
+    # only, so nothing outside this machine reaches the port directly. The
+    # tunnel below and a reverse proxy on this machine still can.
+    ports:
+      - "${ARCHIVIST_PUBLISH:-127.0.0.1:3000}:3000"
+    # The image's health check asks the running service for /api/health.
+    healthcheck:
+      test: ["CMD", "node", "apps/server/build/service/main.js", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      start_period: 20s
+      retries: 3
     # Limit log size so that logs cannot fill the disk or wear out an SD card.
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  # Optional Cloudflare Tunnel, so the website is reachable on your domain
+  # without forwarding a port on your router. In Cloudflare's dashboard, give
+  # the tunnel a public hostname (with an optional path such as /archivist)
+  # whose service is http://app:3000, and set ARCHIVIST_BASE_URL to that
+  # public https address. Started only with --profile tunnel.
+  tunnel:
+    image: cloudflare/cloudflared:2026.10.7
+    profiles: ["tunnel"]
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      # From the tunnel's page in Cloudflare's dashboard. Compose reads every
+      # service's settings even when its profile is off, so this one is not
+      # marked required here. cloudflared stops with an error without it.
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
+    depends_on:
+      - app
+    restart: unless-stopped
     logging:
       driver: json-file
       options:

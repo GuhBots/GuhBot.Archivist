@@ -1,0 +1,31 @@
+{
+  "name": "@guhbot/archivist-server",
+  "version": "0.1.0",
+  "description": "The Archivist service: archive storage and rules, the website's server, and the JSON API.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "build:tests": "node -e \"require('node:fs').rmSync('.test-build', { recursive: true, force: true })\" && tsc -p tsconfig.test.json",
+    "test": "npm run build:tests && node --test \".test-build/tests/**/*.test.js\"",
+    "test:core": "npm run build:tests && node --test \".test-build/tests/archivist/core/**/*.test.js\"",
+    "test:web": "npm run build:tests && node --test \".test-build/tests/archivist/web/**/*.test.js\"",
+    "test:service": "npm run build:tests && node --test \".test-build/tests/service/**/*.test.js\""
+  },
+  "dependencies": {
+    "@fastify/cookie": "11.1.5",
+    "@fastify/multipart": "10.1.9",
+    "@fastify/static": "10.1.12",
+    "archiver": "8.0.0",
+    "better-sqlite3": "^13.2.0",
+    "exiftool-vendored": "39.4.0",
+    "fastify": "5.12.8",
+    "sharp": "^0.35.5"
+  },
+  "devDependencies": {
+    "@types/archiver": "8.0.0",
+    "@types/better-sqlite3": "^9.6.0"
+  },
+  "main": "build/service/main.js"
+}

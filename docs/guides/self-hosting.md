@@ -1,6 +1,8 @@
 # Self-Hosting
 
-This guide runs the service on a machine you control, such as a Raspberry Pi, a spare laptop, or a home server. The steps are the same on each. The machine downloads the published image and runs it with Docker Compose.
+This guide runs the Archivist service on a machine you control, such as a Raspberry Pi, a spare laptop, or a home server, and puts its website on your own domain without opening ports on your router. The steps are the same on each machine. The machine downloads the published image and runs it with Docker Compose.
+
+The Discord bot is a separate service with its own `compose.yaml`, and may run on another machine. [Connecting the Bot](connecting-the-bot.md) links the two.
 
 ## How It Works
 
@@ -40,16 +42,16 @@ Docker downloads the right image for the machine's processor automatically.
 
 ## Deploy
 
-Create a folder for the service and download its configuration. Replace `<owner>/<repository>` with the repository's GitHub path.
+Create a folder for the service and download its configuration.
 
 ```sh
-mkdir -p ~/services/<repository> && cd ~/services/<repository>
-curl -fsSLO https://raw.githubusercontent.com/<owner>/<repository>/main/compose.yaml
-curl -fsSL https://raw.githubusercontent.com/<owner>/<repository>/main/.env.example -o .env
+mkdir -p ~/services/archivist && cd ~/services/archivist
+curl -fsSLO https://raw.githubusercontent.com/GuhBots/GuhBot.Archivist/main/compose.yaml
+curl -fsSL https://raw.githubusercontent.com/GuhBots/GuhBot.Archivist/main/.env.example -o .env
 chmod 600 .env
 ```
 
-Edit `.env` to set the version and fill in the settings and secrets the service needs.
+Edit `.env` to set the version and fill in the settings and secrets the service needs, as [Configure Archivist](#configure-archivist) explains.
 
 ```sh
 nano .env
@@ -72,6 +74,22 @@ docker compose up -d
 ```
 
 The service now runs in the background and starts again after a crash or a restart of the machine.
+
+## Configure Archivist
+
+Each setting is described in `.env.example`. These need your attention before the first start.
+
+| Setting | What to put there |
+| --- | --- |
+| `ARCHIVIST_BASE_URL` | The address people type, including any path, such as `https://guhbot.example.com/archivist`. Plain `http` works only for `localhost` |
+| `ARCHIVIST_OWNER_IDS` | Your Discord user ID, and those of any other owners, separated by commas. Owners create archives and manage whitelists. The service refuses to start without one. In Discord, turn on Developer Mode, then right-click your name and copy your user ID |
+| `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` | From the Discord application's OAuth2 page in the [Developer Portal](https://discord.com/developers/applications). It can be the bot's application or a separate one. Add `<ARCHIVIST_BASE_URL>/auth/discord/callback` under Redirects, exactly |
+| `ARCHIVIST_SESSION_SECRET` | A new random value from `openssl rand -hex 32`. Changing it signs everyone out |
+| `ARCHIVIST_SERVICE_TOKEN` | The Discord bot's credential, from `openssl rand -hex 32`, as [Connecting the Bot](connecting-the-bot.md) explains. Leave it empty until the bot is connected |
+| `GOOGLE_DRIVE_API_KEY` | Optional. Public Drive links work without it |
+| `ARCHIVIST_PUBLISH` | Where the host publishes the website's port. The default, `127.0.0.1:3000`, keeps it reachable only from the machine itself, which is all a Cloudflare Tunnel or a reverse proxy on the same machine needs |
+
+Signing in only lets in owners and Discord users on at least one archive's whitelist. Everyone else sees that they have no access yet.
 
 ## Everyday Tasks
 
@@ -104,37 +122,42 @@ Each setting the service needs is listed in two places in the repository. `.env.
 
 A required setting written as `${NAME:?message}` in `compose.yaml` stops the start with that message when its value is missing.
 
-## Running More Than One Service
+## Running Alongside the Bot
 
-A project can run several services from one repository, such as a chat bot and the website that manages it. Add a service to `compose.yaml` for each one. Services can share one image and run different commands, and they can share the `data` volume.
+The Discord bot runs from its own repository and its own `compose.yaml`, on this machine or another. Each keeps its own `data` volume. Never mount Archivist's data in the bot's container: only Archivist writes archives. The bot reaches Archivist over its API with the service token, as [Connecting the Bot](connecting-the-bot.md) describes.
 
-```yaml
-services:
-  bot:
-    image: ghcr.io/<owner>/<repository>:${APP_VERSION:-latest}
-    command: ["/app/bot"]
-    # environment, restart, volumes, and logging as in the app service
-  web:
-    image: ghcr.io/<owner>/<repository>:${APP_VERSION:-latest}
-    command: ["/app/web"]
-    ports:
-      - "8080:8080"
-    # environment, restart, volumes, and logging as in the app service
-```
+Run only one copy of the bot with a given Discord token. When moving a service to another machine, stop it on the old machine first.
 
-Add a matching `build` section for each service to `compose.override.yaml`. Every Compose command accepts service names, so you can manage one service without affecting the others.
+## Your Own Domain With Cloudflare Tunnel
 
-| Task | Command |
-| --- | --- |
-| Stop one service and keep the others running | `docker compose stop bot` |
-| Start it again | `docker compose start bot` |
-| Follow one service's logs | `docker compose logs -f bot` |
+A Cloudflare Tunnel puts the website on your domain without opening or forwarding ports on your router. A small `cloudflared` container makes an outgoing connection to Cloudflare, and Cloudflare sends your visitors through it. `compose.yaml` includes one in the optional `tunnel` profile.
 
-Run only one copy of a service that logs in to an outside account, such as a chat bot. Two copies with the same token both respond to every event. When moving a service to another machine, stop it on the old machine first.
+1. Add your domain to Cloudflare, if it is not there already.
+2. In the Cloudflare dashboard, open **Zero Trust**, then **Networks**, then **Tunnels**, and create a tunnel with the **Cloudflared** connector. Copy its token, and put it in `.env` as `TUNNEL_TOKEN`.
+3. Add a **Public Hostname** to the tunnel: your subdomain and domain, an optional path such as `archivist`, and the service `HTTP` `app:3000`. The tunnel keeps the path, so the service sees the same addresses the browser uses.
+4. Set `ARCHIVIST_BASE_URL` to the public address, such as `https://guhbot.example.com/archivist`, and add `https://guhbot.example.com/archivist/auth/discord/callback` to the Discord application's redirects.
+5. Start the service with the tunnel:
+
+   ```sh
+   docker compose --profile tunnel up -d
+   ```
+
+Use `--profile tunnel` with every `docker compose` command for this stack, such as `docker compose --profile tunnel up -d --pull always`, so the tunnel is updated and stopped along with the service.
+
+Cloudflare limits the size of each request on its Free and Pro plans to about 100 MB. Archivist accepts files up to 100 MiB, so the largest files can be refused by Cloudflare before they reach the service. Check Cloudflare's current upload limit for your plan, and its terms for serving large video, before relying on the tunnel for every upload. A bot on the same machine or network can use a private address for its uploads instead, as [Connecting the Bot](connecting-the-bot.md) explains.
 
 ## Data and Backups
 
-The service stores files that must survive updates in the `data` volume, mounted at `/data` in the container. `docker compose down` keeps the volume. `docker compose down -v` deletes it.
+The service stores everything that must survive updates in the `data` volume, mounted at `/data` in the container. `docker compose down` keeps the volume. `docker compose down -v` deletes it.
+
+| Path in `/data` | Contents |
+| --- | --- |
+| `archives/<archive ID>/` | Each archive: its database, edit log, and media. Each folder is complete on its own |
+| `operational.db` | Registered archives, whitelists, sign-in sessions, preferences, logs channels, and announcement and export history |
+| `archivist-exports/` | Zips owners export, kept until you delete them |
+| `archivist-tmp/` | Uploads in progress and recovery journals |
+
+To copy an export to this machine's folder, run `docker compose cp app:/data/archivist-exports/<file>.zip .`, then delete it from the volume when you have it.
 
 To back up the volume to a file in the service's folder, stop the service and archive the volume with a temporary container.
 
@@ -218,9 +241,14 @@ Paste the token when asked for a password. In Portainer, add the registry under 
 
 ## Remote Access
 
-This template does not expose the service to the internet. A service that only makes outgoing connections, such as a chat bot, needs no open ports. For a website, choose how to reach it, such as on your local network, through a private network service, or through a [reverse proxy](#reverse-proxy) with HTTPS.
+By default the website's port is published on the machine's loopback address only, so nothing outside the machine can reach it directly. Reach it from outside through the [Cloudflare Tunnel](#your-own-domain-with-cloudflare-tunnel) or a [reverse proxy](#reverse-proxy) that provides HTTPS. To use it only on your local network, set `ARCHIVIST_PUBLISH` to `0.0.0.0:3000` and `ARCHIVIST_BASE_URL` to `http://localhost:3000` on the same machine. Discord sign-in needs HTTPS for any other address.
 
 ## Troubleshooting
+
+* **Discord says the redirect is invalid:** The Discord application's redirect must equal `<ARCHIVIST_BASE_URL>/auth/discord/callback` exactly, including the path and `https`.
+* **"No access yet" after signing in:** The Discord account is not an owner and is on no archive's whitelist. An owner adds it with `/archivist-admin whitelist add` in Discord.
+* **The service stops at start with a settings message:** It names the missing or wrong setting, such as `ARCHIVIST_OWNER_IDS` or a session secret shorter than 32 bytes.
+* **Large uploads fail with 413 behind the tunnel:** Cloudflare refused the request. See [Your Own Domain With Cloudflare Tunnel](#your-own-domain-with-cloudflare-tunnel).
 
 * **`exec format error`:** The image does not match the machine's processor. On a Raspberry Pi, check that the system is 64-bit with `uname -m`, which should print `aarch64`.
 * **`denied` or `unauthorized` when pulling:** The package is private, the image name in `compose.yaml` is wrong, or nothing has been published yet. See [Private Images](#private-images).

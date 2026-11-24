@@ -1,0 +1,14 @@
+build/
+dist/
+.test-build/
+.test-build-*/
+data/
+node_modules/
+package-lock.json
+*.md
+
+# Template files that keep their own formatting.
+.devcontainer/
+.github/
+*.yaml
+*.yml

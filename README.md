@@ -1,83 +1,71 @@
-# template-service
+# GuhBot Archivist
 
-A foundation for services that run on your own machines, such as a chat bot on a Raspberry Pi or a website on a home server. It builds on [template-devcontainer](https://github.com/gavintranquilino/template-devcontainer), which provides shared conventions, pull request checks, and a dev container. This template adds a published container image and a Docker Compose setup, so that any machine with Docker can run the service with two files and one command.
+Archivist preserves the history of a Discord community: original photos, videos, and audio, the people in them, and the events they show, in independent archives that can be exported and opened without GuhBot. This repository is the Archivist service. It holds the archives, their media, and their rules, and serves the website people use to add, edit, and research them.
+
+The [GuhBot Discord bot](https://github.com/GuhBots/GuhBot.Discord) offers quick Archivist commands, such as adding an artifact from Discord, by calling this service's API. The two run as separate services, possibly on different machines. The [Archivist plan](https://github.com/GuhBots/GuhBot.Discord/blob/feat/archivist/docs/proposals/ARCHIVIST-PLAN.md) specifies the product.
 
 ## Start Here
 
-* **Adopting or extending the template:** Follow [Template Usage](docs/guides/template-usage.md).
-* **Setting up development:** Follow [Dev Container](.devcontainer/README.md) to open a shell in the shared environment.
-* **Running the service on a server:** Follow [Self-Hosting](docs/guides/self-hosting.md).
-* **Publishing a release:** Follow [Releasing](docs/guides/releasing.md).
-* **Contributing:** Read [Contributing](CONTRIBUTING.md) for the branch, review, and verification workflow.
-* **Writing code:** Follow [Coding Style](docs/coding-style.md).
-* **Writing documentation:** Follow [Documentation](docs/documentation.md). The [Documentation Map](docs/README.md) lists the included documents.
-* **AI assistants:** Read [AGENTS.md](AGENTS.md) for repository instructions.
+* **Running Archivist on a server:** Follow [Self-Hosting](docs/guides/self-hosting.md), including putting it on your own domain with a Cloudflare Tunnel.
+* **Connecting the Discord bot:** Follow [Connecting the Bot](docs/guides/connecting-the-bot.md). [Bot API](docs/design/bot-api.md) is the contract between the two.
+* **Moving archives out of the bot:** Follow [Moving From the Bot](docs/guides/moving-from-the-bot.md).
+* **Setting up development:** Follow [Dev Container](.devcontainer/README.md), then [Development](#development) below.
+* **Contributing:** Read [Contributing](CONTRIBUTING.md), [Coding Style](docs/coding-style.md), and [Documentation](docs/documentation.md). AI assistants also read [AGENTS.md](AGENTS.md).
 
-## Included Files
+## Layout
+
+The repository is an npm workspaces monorepo.
 
 ```text
 .
-├── README.md                     Repository introduction
-├── CONTRIBUTING.md               Contribution and review workflow
-├── AGENTS.md                     Instructions for AI assistants
-├── .gitignore                    Local files to exclude from version control
-├── .gitattributes                Line-ending normalization
-├── .editorconfig                 Shared editor settings
-├── Dockerfile                    Development, build, and runtime images
-├── .dockerignore                 Files kept out of image builds
-├── compose.yaml                  How servers run the service
-├── compose.override.yaml         Local image builds from a clone
-├── .env.example                  Settings and secrets the service needs, with placeholders
-├── .devcontainer/
-│   ├── README.md                 Dev container setup and customization
-│   ├── devcontainer.json         Dev container configuration
-│   └── post-create.sh            Setup that runs when the container is created
-├── .github/
-│   ├── pull_request_template.md  Pull request description template
-│   └── workflows/
-│       ├── checks.yml            Checks that run on pull requests
-│       └── publish.yml           Publishes the runtime image
-├── tools/
-│   ├── README.md                 Tool descriptions and local usage
-│   └── scripts/                  Check scripts and their configuration
-└── docs/
-    ├── README.md                 Documentation map
-    ├── coding-style.md           Shared style and an area for language rules
-    ├── documentation.md          Documentation placement and conventions
-    ├── glossary.md               Shared terms and acronyms
-    └── guides/
-        ├── README.md             Guide index
-        ├── releasing.md          Versions, releases, and image tags
-        ├── self-hosting.md       Running the service on a server
-        └── template-usage.md     Adoption and extension checklist
+├── apps/
+│   ├── server/        The service: archive storage and rules, sign-in, the JSON API, and the command line
+│   └── web/           The website's pages, built with React, Vite, and Tailwind
+├── docs/              Conventions, guides, and the bot API design
+├── tools/             Repository checks
+├── Dockerfile         Development, build, and runtime images
+├── compose.yaml       How servers run the service, with an optional Cloudflare Tunnel
+├── compose.local.yaml Lets a bot container on the same machine reach the service
+└── .env.example       Every setting, with placeholders
 ```
 
-## Repository Structure
+[`apps/server`](apps/server/README.md) and [`apps/web`](apps/web/README.md) describe their own layouts.
 
-Choose a source layout that fits the project. A single-project repository can keep its source and tests at the root. A monorepo can organize applications, packages, or services in separate directories, each with its own setup and verification instructions.
-
-Root conventions apply throughout the repository. Local guidance can extend them for a component and must explicitly identify any exceptions. Explain component boundaries and shared workflows in the root README as the repository grows.
-
-## How It Works
+## How It Fits Together
 
 ```text
-Develop in the dev container ──► merge to main ──► image :main
-                                 create release ──► image :1.2.3 and :latest
-Server: compose.yaml + .env ──► docker compose up -d --pull always
+Browser ──HTTPS──► Archivist service ◄──HTTPS + service token── GuhBot Discord bot
+                   (website + API)                               (Archivist commands,
+                   /data: archives, media,                        upload announcements)
+                   operational.db
 ```
 
-The [Dockerfile](Dockerfile) has three stages. The `dev` stage is the dev container. The `build` stage builds the service with the same tools. The `runtime` stage is the small image that servers run. The [publish workflow](.github/workflows/publish.yml) builds it for 64-bit Intel or AMD and ARM processors and publishes it to the GitHub container registry.
+* People sign in to the website with Discord. Only owners, listed in `ARCHIVIST_OWNER_IDS`, and Discord users on at least one archive's whitelist get in.
+* The bot sends a shared service token and the Discord user who ran each command. The service checks that user's access exactly as it checks a browser's.
+* New artifacts queue an announcement. The bot collects the queue and posts each one in the archive's logs channel.
+* Only the service writes archives. The bot keeps no archive data.
 
-Until the project adds its service, the runtime image runs a placeholder that only keeps the container running. This lets you test releases and deployment before writing the service.
+## Development
 
-To run the service locally exactly as a server would, copy `.env.example` to `.env` and run `docker compose up -d --build` from the repository root.
+Run these from the repository root, inside the dev container or with Node.js 22.12 or newer.
+
+| Command | Purpose |
+| --- | --- |
+| `npm ci` | Install the workspaces' dependencies |
+| `npm run build` | Compile the server to `apps/server/build/` and build the website to `apps/web/dist/` |
+| `npm start` | Run the service with the settings in `.env` |
+| `npm run check` | Type check the workspaces and tests, and check formatting |
+| `npm test` | Run every server test suite |
+| `npm run test:core`, `test:web`, `test:service` | Run one suite: archive rules, website routes, or the standalone service and bot API |
+| `npm run import-bot-state -- <guhbot.db>` | Copy Archivist's registry, whitelists, and preferences from the bot's database, as [Moving From the Bot](docs/guides/moving-from-the-bot.md) describes |
+| `python3 tools/scripts/run_checks.py` | Check Markdown acronyms, links, and whitespace, as [Tools](tools/README.md) describes |
+
+To run the service locally, copy `.env.example` to `.env` and fill in the Discord sign-in application, a session secret, and your own Discord user ID as the owner. Register `http://localhost:3000/auth/discord/callback` as a redirect in the Discord application. Then run `npm run build` and `npm start`, and open `http://localhost:3000`.
+
+## Image and Releases
+
+The [Dockerfile](Dockerfile) has three stages. The `dev` stage is the dev container, the `build` stage builds both workspaces, and the `runtime` stage is the image servers run. The [publish workflow](.github/workflows/publish.yml) publishes it to the GitHub container registry, as [Releasing](docs/guides/releasing.md) describes. To run the service locally exactly as a server would, copy `.env.example` to `.env` and run `docker compose up -d --build`.
 
 ## Included Checks
 
-Pull requests run the checks described in [Tools](tools/README.md). They need only Python 3 and Git, and you can run them locally with the same commands, inside or outside the dev container.
-
-## Extending the Base
-
-This template builds on template-devcontainer and adds a runtime image, Docker Compose configuration, and image publishing. It includes no language toolchains or service code. Projects add their toolchains to the `dev` stage, their build to the `build` stage, and their start command to the `runtime` stage. Add language rules, toolchains, command-line tools, and automated checks in derived templates or individual repositories. Each addition must include the files and instructions needed to use it.
-
-When adopting the template, replace this introduction with the project's purpose, layout, and setup instructions. Keep the shared conventions and adapt them where needed, as [Template Usage](docs/guides/template-usage.md) describes.
+Pull requests run the repository checks in [Tools](tools/README.md), type checking and formatting, a build, and the server's test suites, as [checks.yml](.github/workflows/checks.yml) defines.

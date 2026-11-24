@@ -7,12 +7,12 @@ The dev container gives every contributor the same Linux development environment
 The image is the `dev` stage of the root [Dockerfile](../Dockerfile) and is configured by [devcontainer.json](devcontainer.json). The same file defines the runtime image that servers run.
 
 * **Operating system:** Ubuntu 26.04 LTS.
-* **Tools:** Git, Python 3 for the [repository checks](../tools/README.md), curl, `sudo`, and common command-line utilities.
+* **Tools:** Node.js 24 and npm for the workspaces, Perl for ExifTool, a C++ toolchain for native modules, Git, Python 3 for the [repository checks](../tools/README.md), curl, `sudo`, and common command-line utilities.
 * **User:** A non-root user named `dev`, which can run `sudo` without a password.
 * **Workspace:** The repository is mounted at `/workspaces/<repository-folder-name>`. Changes made inside the container are changes to your local files.
 * **Setup script:** [post-create.sh](post-create.sh) runs once after the container is created.
 
-The template includes no language toolchains. Each project adds the ones it needs, as [Customizing the Container](#customizing-the-container) describes.
+[post-create.sh](post-create.sh) installs the workspaces' dependencies with `npm ci`. The service's port, 3000, is forwarded. Add further toolchains as [Customizing the Container](#customizing-the-container) describes.
 
 ## Prerequisites
 

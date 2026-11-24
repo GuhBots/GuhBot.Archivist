@@ -8,4 +8,12 @@
 .DS_Store
 Thumbs.db
 
-# Add tool-specific caches, build outputs, and local configuration as needed.
+# Local progress notes across development sessions
+/*.local.md
+
+# Node.js dependencies, compiled output, test builds, and local data
+node_modules/
+build/
+dist/
+.test-build/
+data/

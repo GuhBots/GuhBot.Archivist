@@ -1,0 +1,28 @@
+{
+  "name": "guhbot-archivist",
+  "version": "0.1.0",
+  "description": "GuhBot Archivist: the archive service, its website and API, and a local archive viewer.",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/server"
+  ],
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "build": "npm run build --workspace apps/server",
+    "typecheck": "npm run typecheck --workspace apps/server",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check": "npm run typecheck && npm run format:check",
+    "test": "npm run test --workspace apps/server",
+    "test:core": "npm run test:core --workspace apps/server",
+    "test:web": "npm run test:web --workspace apps/server"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "prettier": "^3.10.1",
+    "typescript": "~5.9.3"
+  }
+}

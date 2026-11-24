@@ -44,7 +44,19 @@ This applies to documentation, code comments, and schema comments.
 
 ## Language-Specific Rules
 
-No language-specific rules are defined in the base. Add a subsection for each language used by a derived template or repository.
+### TypeScript
+
+These rules cover the npm workspaces under `apps/`. Each workspace's README explains its layout, such as [the server's](../apps/server/README.md).
+
+* **Formatting:** Prettier formats the code, configured in `.prettierrc.json`. `npm run format` applies it and `npm run check` verifies it. `.prettierignore` leaves Markdown and the template's YAML and dev container files to their own conventions.
+* **Type checking:** `tsconfig.base.json` holds the shared compiler settings, with strict mode and unused-code reports, and each workspace extends it. `npm run check` type checks every workspace and its tests.
+* **Modules:** The project uses ECMAScript (ES) modules. Import local files with a `.js` extension, as Node.js requires, even though the source file ends in `.ts`.
+* **Naming:** Use `camelCase` for functions and values, `PascalCase` for classes and types, and `UPPER_SNAKE_CASE` for module-level constants. Name files in lowercase with hyphens.
+* **Settings:** Only the server's settings module reads environment variables. Archive code takes paths, connections, and settings as arguments, which a test enforces.
+* **Errors:** Expected failures throw `ArchivistError` with a code from `errors.ts`, which every interface turns into its own reply. Let unexpected errors propagate to the route's error handler, which logs them and replies without their details.
+* **Tests:** Use the Node.js test runner, as [Tests](../apps/server/tests/README.md) describes.
+
+Add a subsection for each further language the repository uses.
 
 Each subsection should state the following, where applicable.
 

@@ -7,15 +7,17 @@ import {
   type EntityView,
   type EventPage,
   type HistoryEntry,
-  mediaUrl,
   query,
 } from "../api.js";
 import { DateField } from "../components/DateField.js";
 import { FileDrop, IMAGE_ACCEPT } from "../components/FileDrop.js";
+import { blockersText, type HistoryChange, HistoryRows } from "../components/History.js";
 import { Thumb } from "../components/Media.js";
 import { type Picked, Picker } from "../components/Picker.js";
-import { dayText, todayDay } from "../format.js";
+import { byteText, dayText, todayDay } from "../format.js";
+import { AccountModal, fetchDiscordAvatar } from "../modals/AccountModal.js";
 import { CharacterMergeModal } from "../modals/CharacterMergeModal.js";
+import { DeleteModal } from "../modals/DeleteModal.js";
 import { PicturesModal } from "../modals/PicturesModal.js";
 import { characterPath, navigate, viewPath } from "../router.js";
 import { useWindows } from "../Shell.js";
@@ -26,13 +28,11 @@ import { ViewFrame } from "./ViewFrame.js";
 
 /**
  * A character's page: their known name, facts, aliases, main accounts,
- * accounts with dated names, avatars, and memberships, introductions, and
- * their artifacts and events. Dated history is edited here rather than in
+ * accounts, introductions, and their artifacts and events. Each account
+ * opens in its own window. Dated history is edited here rather than in
  * Discord. Each change saves at once with the version just loaded, so
  * nothing overwrites someone else's edit.
  */
-
-type Account = CharacterView["accounts"][number];
 
 const ARTIFACTS_SHOWN = 24;
 
@@ -43,44 +43,17 @@ function ageOn(birthDay: string, today: string): number {
   return ty - by - (tm < bm || (tm === bm && td < bd) ? 1 : 0);
 }
 
-/**
- * The latest entry, as the service picks it outside the timeline: the latest
- * dated one, or an undated one when none is dated.
- */
-function latestEntry(entries: HistoryEntry[]): HistoryEntry | undefined {
-  const dated = entries.filter((entry) => entry.date);
-  if (dated.length) {
-    return dated.reduce((a, b) => (b.date!.archiveDay >= a.date!.archiveDay ? b : a));
-  }
-  return [...entries].sort((a, b) => b.id.localeCompare(a.id))[0];
+/** Where the character's picture comes from, in words. */
+function pictureNote(character: CharacterView): string {
+  const picture = character.picture;
+  if (picture.source === "fallback") return "a fallback picture, not from an account";
+  if (picture.source === "initials") return "none known yet";
+  const account = character.accounts.find((a) => a.id === picture.accountId);
+  const name = account?.name ?? "an account";
+  return picture.standIn
+    ? `the latest known avatar of ${name}. Name a main account to use its avatar.`
+    : `the avatar of their main account, ${name}`;
 }
-
-/** The character's latest picture and where it comes from. */
-function currentPicture(character: CharacterView): { mediaId: string | null; note: string } {
-  const main = latestEntry(character.history.filter((entry) => entry.kind === "main_account"));
-  const account = character.accounts.find((a) => a.id === main?.targetId);
-  if (account) {
-    const avatar = latestEntry(account.history.filter((entry) => entry.kind === "avatar"));
-    if (avatar?.mediaId) {
-      return {
-        mediaId: avatar.mediaId,
-        note: `the avatar of their main account, ${account.label}`,
-      };
-    }
-  }
-  if (character.fallbackMediaId) {
-    return { mediaId: character.fallbackMediaId, note: "a fallback picture, not from an account" };
-  }
-  return { mediaId: null, note: "none known yet" };
-}
-
-const when = (entry: HistoryEntry) =>
-  entry.date ? dayText(entry.date.archiveDay) : "date unknown";
-
-const span = (entry: HistoryEntry) =>
-  `${entry.start ? dayText(entry.start.archiveDay) : "unknown start"} to ${
-    entry.end ? dayText(entry.end.archiveDay) : "now or unknown"
-  }`;
 
 export function CharacterPage(props: { id: string }) {
   const { archive, revision, changed, toast, setFilters } = useArchive();
@@ -114,12 +87,12 @@ export function CharacterPage(props: { id: string }) {
 
   /** Saves a change, then reloads. A stale version reloads too and says why. */
   const run = useCallback(
-    async (action: () => Promise<unknown>, done: string): Promise<boolean> => {
+    async (action: () => Promise<unknown>, done: string | (() => string)): Promise<boolean> => {
       setError(null);
       try {
         await action();
         changed();
-        toast(done);
+        toast(typeof done === "function" ? done() : done);
         return true;
       } catch (failure) {
         if (failure instanceof ApiError && failure.code === "stale_version") {
@@ -144,7 +117,6 @@ export function CharacterPage(props: { id: string }) {
     );
   }
 
-  const picture = currentPicture(character);
   const name = character.knownName;
   const history = (kind: HistoryEntry["kind"]) =>
     character.history.filter((entry) => entry.kind === kind);
@@ -169,6 +141,37 @@ export function CharacterPage(props: { id: string }) {
         }),
       done,
     );
+  const editEntry = (parent: string, version: number, entry: HistoryEntry, change: HistoryChange) =>
+    run(
+      () =>
+        api(`${base}/entities/${parent}/history/${entry.id}`, {
+          method: "PATCH",
+          json: { historyKind: entry.kind, expectedVersion: version, ...change },
+        }),
+      "Saved.",
+    );
+  // Introductions this character made belong to the introduced character's history.
+  const introducedRows: (HistoryEntry & { parentVersion: number })[] = character.introduced.map(
+    (intro) => ({
+      kind: "introduction",
+      id: intro.entryId,
+      name: null,
+      discriminator: null,
+      targetId: intro.characterId,
+      targetName: intro.knownName,
+      mediaId: null,
+      date: intro.date,
+      start: null,
+      end: null,
+      parentVersion: intro.characterVersion,
+    }),
+  );
+  const mainAccountId =
+    character.history
+      .filter((entry) => entry.kind === "main_account" && entry.date)
+      .sort((a, b) => b.date!.archiveDay.localeCompare(a.date!.archiveDay))[0]?.targetId ??
+    character.history.find((entry) => entry.kind === "main_account")?.targetId;
+  const blocked = Object.keys(character.blockers).length > 0;
   const own = `character/${character.id}`;
   const artifactIds = artifacts?.items.map((item) => item.id) ?? [];
 
@@ -226,7 +229,7 @@ export function CharacterPage(props: { id: string }) {
             >
               <Avatar
                 archiveId={archive.archiveId}
-                picture={{ mediaId: picture.mediaId }}
+                picture={character.picture}
                 name={name}
                 size="lg"
               />
@@ -251,7 +254,7 @@ export function CharacterPage(props: { id: string }) {
               </span>
             </div>
             <span className="hint pic-note">
-              <b>Picture:</b> {picture.note}
+              <b>Picture:</b> {pictureNote(character)}
               {character.pictures.length > 1
                 ? `. Select it to see all ${character.pictures.length}.`
                 : ""}
@@ -264,11 +267,12 @@ export function CharacterPage(props: { id: string }) {
 
         <div className="sections">
           <Box title="Aliases">
-            <Rows
+            <HistoryRows
               entries={history("alias")}
               editing={editing}
               render={(entry) => entry.name}
               onRemove={(entry) => removeEntry(own, character.version, entry, "Removed the alias.")}
+              onEdit={(entry, change) => editEntry(own, character.version, entry, change)}
             />
             {editing ? (
               <AddRow
@@ -287,13 +291,14 @@ export function CharacterPage(props: { id: string }) {
           </Box>
 
           <Box title="Main account">
-            <Rows
+            <HistoryRows
               entries={history("main_account")}
               editing={editing}
               render={(entry) => `${entry.targetName ?? "An account"} from this date`}
               onRemove={(entry) =>
                 removeEntry(own, character.version, entry, "Removed the main account.")
               }
+              onEdit={(entry, change) => editEntry(own, character.version, entry, change)}
             />
             {editing && character.accounts.length ? (
               <AddRow
@@ -320,23 +325,50 @@ export function CharacterPage(props: { id: string }) {
             ) : null}
           </Box>
 
-          {character.accounts.map((account) => (
-            <AccountBox
-              key={account.id}
-              account={account}
-              editing={editing}
-              run={run}
-              onRemove={(entry, done) =>
-                removeEntry(`account/${account.id}`, account.version, entry, done)
-              }
-              onAdd={(json, done) => addEntry(`account/${account.id}`, account.version, json, done)}
-            />
-          ))}
+          <Box title={`Accounts (${character.accounts.length})`}>
+            {character.accounts.length ? (
+              <div className="account-list">
+                {character.accounts.map((account) => (
+                  <button
+                    key={account.id}
+                    className="account-row"
+                    type="button"
+                    onClick={() => windows.show(<AccountModal accountId={account.id} />)}
+                  >
+                    <Avatar
+                      archiveId={archive.archiveId}
+                      picture={{ mediaId: account.avatarMediaId }}
+                      name={account.name}
+                      size="sm"
+                    />
+                    <span className="nm">{account.name}</span>
+                    <span className="hint">
+                      {[
+                        account.id === mainAccountId ? "main" : null,
+                        account.accountKind === "bot" ? "bot" : null,
+                        account.discordCreatedAt
+                          ? `since ${dayText(account.discordCreatedAt.slice(0, 10))}`
+                          : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <span className="hint">No accounts linked yet.</span>
+            )}
+            {editing ? <AccountsForm character={character} run={run} /> : null}
+          </Box>
 
           <Box title="Introductions">
-            <Rows
+            <HistoryRows
               entries={history("introduction")}
               editing={editing}
+              empty={
+                introducedRows.length ? "Nobody introduced them, as far as is known." : undefined
+              }
               render={(entry) => (
                 <>
                   Introduced by{" "}
@@ -346,19 +378,34 @@ export function CharacterPage(props: { id: string }) {
               onRemove={(entry) =>
                 removeEntry(own, character.version, entry, "Removed the introduction.")
               }
+              onEdit={(entry, change) => editEntry(own, character.version, entry, change)}
             />
-            {character.introduced.length ? (
-              <div className="hist">
-                {character.introduced.map((intro) => (
-                  <div key={intro.characterId}>
-                    <time>{intro.date ? dayText(intro.date.archiveDay) : "date unknown"}</time>
-                    <span>
-                      Introduced <CharacterLink id={intro.characterId} name={intro.knownName} />
-                    </span>
-                    <span />
-                  </div>
-                ))}
-              </div>
+            {introducedRows.length ? (
+              <HistoryRows
+                entries={introducedRows}
+                editing={editing}
+                render={(entry) => (
+                  <>
+                    Introduced <CharacterLink id={entry.targetId} name={entry.targetName ?? ""} />
+                  </>
+                )}
+                onRemove={(entry) =>
+                  removeEntry(
+                    `character/${entry.targetId}`,
+                    (entry as (typeof introducedRows)[number]).parentVersion,
+                    entry,
+                    "Removed the introduction.",
+                  )
+                }
+                onEdit={(entry, change) =>
+                  editEntry(
+                    `character/${entry.targetId}`,
+                    (entry as (typeof introducedRows)[number]).parentVersion,
+                    entry,
+                    change,
+                  )
+                }
+              />
             ) : null}
             {editing ? (
               <IntroducedByForm
@@ -378,7 +425,6 @@ export function CharacterPage(props: { id: string }) {
 
         {editing ? (
           <div className="sections">
-            <AccountsForm character={character} run={run} />
             <FallbackPictureForm character={character} run={run} url={url} />
             <section className="box">
               <h2>Merge with another character</h2>
@@ -396,6 +442,39 @@ export function CharacterPage(props: { id: string }) {
                 </button>
               </div>
             </section>
+            <section className="box">
+              <h2>Delete this character</h2>
+              {blocked ? (
+                <span className="hint">
+                  Still linked from {blockersText(character.blockers)}. Remove those links first, so
+                  nothing is deleted by accident. Unlink or delete their accounts from each
+                  account's window.
+                </span>
+              ) : (
+                <span className="hint">
+                  Nothing links to them any more, so they can be deleted.
+                </span>
+              )}
+              <div>
+                <button
+                  className="btn danger"
+                  type="button"
+                  disabled={blocked}
+                  onClick={() =>
+                    windows.show(
+                      <DeleteModal
+                        what={`the character ${name}`}
+                        path={`/entities/character/${character.id}`}
+                        version={character.version}
+                        onDeleted={() => navigate(viewPath(archive.archiveId, "timeline"))}
+                      />,
+                    )
+                  }
+                >
+                  Delete character…
+                </button>
+              </div>
+            </section>
           </div>
         ) : null}
 
@@ -407,7 +486,7 @@ export function CharacterPage(props: { id: string }) {
                 <button
                   key={item.id}
                   type="button"
-                  title={item.description}
+                  title={`${item.description} · ${byteText(item.media.byteLength)}`}
                   aria-label={`${item.description}, ${dayText(item.day)}`}
                   onClick={() =>
                     windows.openArtifact(item.id, { ids: artifactIds, index, title: name })
@@ -463,7 +542,7 @@ export function CharacterPage(props: { id: string }) {
   );
 }
 
-type Run = (action: () => Promise<unknown>, done: string) => Promise<boolean>;
+type Run = (action: () => Promise<unknown>, done: string | (() => string)) => Promise<boolean>;
 
 function Box(props: { title: ReactNode; children: ReactNode }) {
   return (
@@ -485,37 +564,6 @@ function CharacterLink(props: { id: string | null; name: string }) {
     >
       {props.name}
     </button>
-  );
-}
-
-/** History rows, oldest first with undated ones last, each removable while editing. */
-function Rows(props: {
-  entries: HistoryEntry[];
-  editing: boolean;
-  render(entry: HistoryEntry): ReactNode;
-  onRemove(entry: HistoryEntry): void;
-  dates?: (entry: HistoryEntry) => string;
-}) {
-  if (!props.entries.length) return <span className="hint">Nothing recorded.</span>;
-  const day = (entry: HistoryEntry) =>
-    entry.date?.archiveDay ?? entry.start?.archiveDay ?? "9999-12-31";
-  const sorted = [...props.entries].sort((a, b) => day(a).localeCompare(day(b)));
-  return (
-    <div className="hist">
-      {sorted.map((entry) => (
-        <div key={`${entry.kind}:${entry.id}`}>
-          <time>{props.dates ? props.dates(entry) : when(entry)}</time>
-          <span>{props.render(entry)}</span>
-          {props.editing ? (
-            <button className="rm" type="button" onClick={() => props.onRemove(entry)}>
-              Remove
-            </button>
-          ) : (
-            <span />
-          )}
-        </div>
-      ))}
-    </div>
   );
 }
 
@@ -584,203 +632,6 @@ function AddRow(props: {
         onChange={setDate}
         placeholder="Jul 15 2019"
       />
-      <button className="btn primary" type="submit" disabled={!ready}>
-        Add
-      </button>
-    </form>
-  );
-}
-
-function AccountBox(props: {
-  account: Account;
-  editing: boolean;
-  run: Run;
-  onRemove(entry: HistoryEntry, done: string): void;
-  onAdd(json: Record<string, unknown>, done: string): Promise<boolean>;
-}) {
-  const { archive } = useArchive();
-  const { account, editing } = props;
-  const names = account.history.filter((entry) => entry.kind === "account_name");
-  const avatars = account.history.filter((entry) => entry.kind === "avatar");
-  const memberships = account.history.filter((entry) => entry.kind === "membership");
-  const others = account.history.filter(
-    (entry) => entry.kind === "ownership" || entry.kind === "bot_owner",
-  );
-  return (
-    <Box title={`Account: ${account.label}${account.accountKind === "bot" ? " (bot)" : ""}`}>
-      {account.discordCreatedAt ? (
-        <span className="hint">
-          Discord account created {dayText(account.discordCreatedAt.slice(0, 10))}, from its ID
-        </span>
-      ) : null}
-      {account.history.length ? null : <span className="hint">Nothing recorded.</span>}
-      {names.length ? (
-        <Rows
-          entries={names}
-          editing={editing}
-          render={(entry) =>
-            `Name: ${entry.name}${entry.discriminator ? `#${entry.discriminator}` : ""}`
-          }
-          onRemove={(entry) => props.onRemove(entry, "Removed the name.")}
-        />
-      ) : null}
-      {avatars.length ? (
-        <Rows
-          entries={avatars}
-          editing={editing}
-          render={(entry) => (
-            <span style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
-              {entry.mediaId ? (
-                <span className="av sm">
-                  {/* The original, so an animated GIF plays as it was uploaded. */}
-                  <img src={mediaUrl(archive.archiveId, entry.mediaId)} alt="" loading="lazy" />
-                </span>
-              ) : null}
-              Avatar
-            </span>
-          )}
-          onRemove={(entry) => props.onRemove(entry, "Removed the avatar.")}
-        />
-      ) : null}
-      {memberships.length ? (
-        <Rows
-          entries={memberships}
-          editing={editing}
-          dates={(entry) => (entry.start ? dayText(entry.start.archiveDay) : "date unknown")}
-          render={(entry) => `Member of ${entry.targetName ?? "a server"}, ${span(entry)}`}
-          onRemove={(entry) => props.onRemove(entry, "Removed the membership.")}
-        />
-      ) : null}
-      {others.length ? (
-        <Rows
-          entries={others}
-          editing={editing}
-          dates={(entry) => (entry.start ? dayText(entry.start.archiveDay) : "")}
-          render={(entry) =>
-            entry.kind === "bot_owner"
-              ? `Bot owned by ${entry.targetName ?? "someone"}`
-              : `Owned by ${entry.targetName ?? "someone"}, ${span(entry)}`
-          }
-          onRemove={(entry) => props.onRemove(entry, "Removed it.")}
-        />
-      ) : null}
-      {editing ? <AccountAddForms account={account} run={props.run} onAdd={props.onAdd} /> : null}
-    </Box>
-  );
-}
-
-/** Adds a name, an avatar image, or a server membership to an account. */
-function AccountAddForms(props: {
-  account: Account;
-  run: Run;
-  onAdd(json: Record<string, unknown>, done: string): Promise<boolean>;
-}) {
-  const { archive } = useArchive();
-  const [what, setWhat] = useState<"name" | "avatar" | "membership">("name");
-  const [name, setName] = useState("");
-  const [date, setDate] = useState("");
-  const [end, setEnd] = useState("");
-  const [file, setFile] = useState<File | null>(null);
-  const [server, setServer] = useState<Picked[]>([]);
-  const reset = () => {
-    setName("");
-    setDate("");
-    setEnd("");
-    setFile(null);
-    setServer([]);
-  };
-  const ready = what === "name" ? name.trim() : what === "avatar" ? file : server.length === 1;
-  const submit = async () => {
-    let ok = false;
-    if (what === "name") {
-      ok = await props.onAdd(
-        { kind: "account_name", name: name.trim(), date: date.trim() || undefined },
-        "Added the name.",
-      );
-    } else if (what === "membership") {
-      ok = await props.onAdd(
-        {
-          kind: "membership",
-          targetId: server[0]!.id,
-          start: date.trim() || undefined,
-          end: end.trim() || undefined,
-        },
-        "Added the membership.",
-      );
-    } else {
-      ok = await props.run(async () => {
-        const form = new FormData();
-        form.append("purpose", "avatar");
-        form.append("expectedVersion", String(props.account.version));
-        if (date.trim()) form.append("date", date.trim());
-        form.append("file", file!, file!.name);
-        await api(
-          `/api/archives/${archive.archiveId}/entities/account/${props.account.id}/picture`,
-          { method: "POST", form },
-        );
-      }, "Added the avatar.");
-    }
-    if (ok) reset();
-  };
-  return (
-    <form
-      className="addrow"
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (ready) void submit();
-      }}
-    >
-      <label className="field">
-        <span>Add</span>
-        <select
-          value={what}
-          onChange={(event) => {
-            setWhat(event.target.value as typeof what);
-            reset();
-          }}
-        >
-          <option value="name">Name</option>
-          <option value="avatar">Avatar image</option>
-          <option value="membership">Joined a server</option>
-        </select>
-      </label>
-      {what === "name" ? (
-        <label className="field">
-          <span>Name</span>
-          <input value={name} onChange={(event) => setName(event.target.value)} />
-        </label>
-      ) : what === "avatar" ? (
-        <FileDrop
-          label="Image (GIFs stay animated)"
-          accept={IMAGE_ACCEPT}
-          file={file}
-          onFile={setFile}
-        />
-      ) : (
-        <Picker
-          archiveId={archive.archiveId}
-          kind="server"
-          label="Server"
-          value={server}
-          onChange={(value) => setServer(value.slice(-1))}
-        />
-      )}
-      <DateField
-        archiveId={archive.archiveId}
-        label={what === "membership" ? "Joined (optional)" : "Seen on (optional)"}
-        value={date}
-        onChange={setDate}
-        placeholder="Jul 15 2019"
-      />
-      {what === "membership" ? (
-        <DateField
-          archiveId={archive.archiveId}
-          label="Left (optional)"
-          value={end}
-          onChange={setEnd}
-          placeholder="Empty if still there"
-        />
-      ) : null}
       <button className="btn primary" type="submit" disabled={!ready}>
         Add
       </button>
@@ -911,15 +762,14 @@ function FactsForm(props: { character: CharacterView; run: Run; url: string }) {
 
 /** Links an existing account to this character, or adds a new one. */
 function AccountsForm(props: { character: CharacterView; run: Run }) {
-  const { archive } = useArchive();
+  const { archive, me } = useArchive();
   const [existing, setExisting] = useState<Picked[]>([]);
   const [label, setLabel] = useState("");
   const [kind, setKind] = useState<"human" | "bot">("human");
   const [discordId, setDiscordId] = useState("");
   const base = `/api/archives/${archive.archiveId}/entities/account`;
   return (
-    <section className="box">
-      <h2>Accounts</h2>
+    <>
       <form
         className="addrow"
         onSubmit={async (event) => {
@@ -952,9 +802,10 @@ function AccountsForm(props: { character: CharacterView; run: Run }) {
         onSubmit={async (event) => {
           event.preventDefault();
           if (!label.trim()) return;
+          let note = "Added the account.";
           const ok = await props.run(
-            () =>
-              api(base, {
+            async () => {
+              const account = await api<EntityView>(base, {
                 method: "POST",
                 json: {
                   kind,
@@ -962,8 +813,17 @@ function AccountsForm(props: { character: CharacterView; run: Run }) {
                   discordId: discordId.trim() || undefined,
                   characterId: props.character.id,
                 },
-              }),
-            "Added the account.",
+              });
+              // With a Discord ID, the account's current avatar comes along when the service can ask Discord.
+              if (discordId.trim() && me.features.discordLookups) {
+                note = await fetchDiscordAvatar(archive.archiveId, account).then(
+                  (found) => `Added the account. ${found}`,
+                  (failure: unknown) =>
+                    `Added the account, but its avatar could not be fetched: ${failure instanceof Error ? failure.message : failure}`,
+                );
+              }
+            },
+            () => note,
           );
           if (ok) {
             setLabel("");
@@ -994,7 +854,7 @@ function AccountsForm(props: { character: CharacterView; run: Run }) {
           Add
         </button>
       </form>
-    </section>
+    </>
   );
 }
 

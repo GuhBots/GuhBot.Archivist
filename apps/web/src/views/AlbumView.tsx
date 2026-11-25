@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, type ArtifactPage, type ArtifactSummary, query } from "../api.js";
 import { Thumb } from "../components/Media.js";
-import { dayText, MONTHS_LONG } from "../format.js";
+import { byteText, dayText, MONTHS_LONG } from "../format.js";
 import { AddMenu } from "../components/AddMenu.js";
 import { FiltersModal } from "../modals/FiltersModal.js";
 import { useWindows } from "../Shell.js";
@@ -21,6 +21,7 @@ export function AlbumView() {
   const [items, setItems] = useState<ArtifactSummary[]>([]);
   const [next, setNext] = useState<string | null>(null);
   const [total, setTotal] = useState<number | null>(null);
+  const [totalBytes, setTotalBytes] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const sentinel = useRef<HTMLDivElement>(null);
@@ -36,6 +37,7 @@ export function AlbumView() {
       setItems((current) => (replace ? page.items : [...current, ...page.items]));
       setNext(page.next);
       setTotal(page.total);
+      setTotalBytes(page.totalBytes);
     } catch (failure) {
       setError(failure);
     } finally {
@@ -107,7 +109,13 @@ export function AlbumView() {
       head={
         <>
           <h1>Album</h1>
-          <span className="meta">{total === null ? "" : `${total} artifacts`}</span>
+          <span className="meta">
+            {total === null ? "" : `${total} artifacts`}
+            {/* The whole archive's size, which a filtered count would not match. */}
+            {total !== null && totalBytes !== null && !filterCount(filters)
+              ? ` · ${byteText(totalBytes)}`
+              : ""}
+          </span>
           {filterCount(filters) ? <span className="meta">Filtered</span> : null}
         </>
       }
@@ -187,6 +195,7 @@ export function AlbumView() {
                       {item.description.length > 60
                         ? `${item.description.slice(0, 59)}…`
                         : item.description}
+                      <small className="size">{byteText(item.media.byteLength)}</small>
                     </span>
                   </button>
                 );

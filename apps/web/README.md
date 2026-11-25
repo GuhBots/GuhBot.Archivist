@@ -57,15 +57,31 @@ File fields are dashed boxes: choose a file or drop one on the box, and the chos
 
 Windows scroll only their body, so the footer with Save stays in view. On a character's page, changed facts show their Save in a row that stays at the bottom of the window.
 
+A file with no date inside it takes one from its name, such as `IMG_20190715_183012.jpg`, and otherwise from when the uploader's computer last changed it, which the add-artifact form sends. The artifact window names where its file date came from. A time typed without a zone is read in the contributor's timezone, or the archive's, and the field shows how it reads. There is no confirmation step.
+
+## Characters and Accounts
+
+A character's page lists their accounts in one section, each with its picture, name, and whether it is the main account. Selecting one opens the account's window, `src/modals/AccountModal.tsx`, with its picture, Discord ID, names, avatars, memberships, details, and Delete. When the service has `DISCORD_BOT_TOKEN`, an account with a Discord ID can fetch its current avatar, and adding an account with a Discord ID fetches it at once.
+
+Every dated history entry, such as an alias, main account, introduction, account name, avatar, membership, or server name or icon, has Edit beside Remove while editing, to change its name or fill in an unknown date. `src/components/History.tsx` holds these rows.
+
+A character's picture is their main account's avatar for the date shown, then their fallback picture, then the latest avatar of their main account or any linked account. That stand-in carries a ~ mark, as a fallback picture carries an F. The characters column names each character's main account under their name. Real names show only on the character's page.
+
+Characters, accounts, servers, channels, and group chats are deleted from their page or window. Delete stays disabled, naming what still links to the record, until those links are removed, so nothing linked is deleted by accident. `src/modals/DeleteModal.tsx` confirms it.
+
 ## Timeline
 
-Drag or scroll to move, and hold Ctrl while scrolling to zoom. The ruler names days at day zoom and months otherwise, with months or years on a second row. The period at the left edge is always named, so a scrolled view shows which month or year it is in. The tray's Legend button explains the dot shades, dashed outlines, arrows, and event strips.
+Drag or scroll to move, and hold Ctrl while scrolling to zoom. The ruler names days at day zoom and months otherwise, with months or years on a second row. The period at the left edge is always named, so a scrolled view shows which month or year it is in. The tray's Legend button explains the dot shades, dashed outlines, arrows, and event strips. Today centers the timeline on today's date in the archive's timezone.
+
+## Album
+
+The head shows how many artifacts match and, with no filters, the size of all their original files. Each tile's caption and the artifact window show the file's size. Stepping with the arrows or the keyboard keeps the artifact window open and swaps its contents. The window keeps what it has loaded and loads the next and previous artifacts ahead, so most steps show at once, and shows placeholders of the same size otherwise.
 
 ## Places
 
 A server's page shows its artifacts oldest first, with channel filters and a channel-lane view. Group chats show the same historical list. Channel lanes group artifacts by day, week, or month to keep dots apart. They draw up to the first 2,000 matching artifacts and state when that limit is reached. The paged list retains access to every matching artifact.
 
-Edit Place changes the base name, Discord ID, lane color, dated names, and server icons or the group chat's current icon. It also adds, renames, and deletes a server's channels. Each save checks the current version. A stale save reloads the record for review.
+Edit Place changes the base name, Discord ID, lane color, dated names, and server icons or the group chat's current icon, and edits each dated name's and icon's date. It also adds, renames, and deletes a server's channels, and deletes the server or group chat once nothing links to it. Each save checks the current version. A stale save reloads the record for review.
 
 ## Heatmap
 
@@ -73,7 +89,7 @@ The heatmap shows a selected year's artifacts and event starts in separate month
 
 ## Graph
 
-Characters are nodes, with a picture when one is known. The tray toggles four layers: shared artifacts, shared events, introductions, and servers where both were members at the same time. A membership with no join date is left out, and one with no leave date continues. The tray also hides pairs with fewer than one, three, or five shared artifacts. The layout is the approved deterministic one in `src/views/graph-layout.ts`: every pair pushes apart and each visible connection pulls its pair together, so the same data always draws the same picture. The pull only places nodes, and no strength score is shown. Large archives take fewer layout steps so the page stays responsive.
+Characters are nodes, with a picture when one is known. The tray toggles four layers: shared artifacts, shared events, introductions, and servers where both were members at the same time. A membership with no join date is left out, and one with no leave date continues. The tray also hides pairs with fewer than one, three, or five shared artifacts. The layout is the approved deterministic one in `src/views/graph-layout.ts`: every pair pushes apart and each visible connection pulls its pair together, so the same data always draws the same picture. The pull only places nodes, and no strength score is shown. A pair stops pulling at 48 pixels apart, and pairs still closer after the picture is fitted to the box are pushed apart, so connected characters never pile up. Large archives take fewer layout steps so the page stays responsive.
 
 Pointing at a character lights up their connections. Selecting one focuses it and links to their page. Selecting a line opens an album of the artifacts the two share under the current filters, or lists the events, introductions, and memberships that connect them when they share none. The wheel or a pinch zooms around the pointer, dragging pans, and the tray zooms out, in, and to fit. `/a/<archive>/graph?focus=<character>` opens it focused on a character.
 

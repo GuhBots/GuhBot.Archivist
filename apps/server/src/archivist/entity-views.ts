@@ -1,14 +1,15 @@
 import type Database from "better-sqlite3";
 import type { Actor, ArchivistContext } from "./context.js";
-import { type EntityKind } from "./entities.js";
+import { type EntityKind, entityBlockers } from "./entities.js";
 import { ArchivistError } from "./errors.js";
 import {
   characterPictureAt,
   type HistoryEntry,
   listHistory,
+  mainAccountAt,
   nameAt,
   type Picture,
-  serverIconAt,
+  serverIconOn,
 } from "./history.js";
 import { resolveShortId } from "./lookup.js";
 import { readDate, type StoredDate } from "./date-store.js";
@@ -42,6 +43,11 @@ export interface CharacterSummary {
   realName: string | null;
   /** The picture on the requested day, or the latest one. */
   picture: Picture;
+  /**
+   * The name of their main account on the requested day, or the latest
+   * recorded one, or their only account when no main account is recorded.
+   */
+  mainAccount: string | null;
 }
 
 export interface PlaceSummary {
@@ -51,6 +57,8 @@ export interface PlaceSummary {
   /** The name and icon in effect on the requested day, or the latest ones. */
   name: string;
   iconMediaId: string | null;
+  /** True when no icon is known for the requested day, so the latest known one stands in. */
+  iconStandIn: boolean;
   color: string;
   discordId: string | null;
   isMain: boolean;
@@ -110,9 +118,30 @@ export function listCharacters(
     items: page.map(({ k: _k, ...row }) => ({
       ...row,
       picture: characterPictureAt(db, row.id, input.day),
+      mainAccount: mainAccountName(db, row.id, input.day),
     })),
     next: rows.length > limit && last ? cursorOf([last.k, last.id]) : null,
   };
+}
+
+/**
+ * The account to name under a character: their main account on `day`, else
+ * the latest recorded one, else their only account. Null when none applies.
+ */
+function mainAccountName(db: Database.Database, characterId: string, day?: string): string | null {
+  let accountId =
+    mainAccountAt(db, characterId, day) ?? (day ? mainAccountAt(db, characterId) : null);
+  if (!accountId) {
+    const owned = db
+      .prepare("SELECT id FROM accounts WHERE character_id = ? AND kind = 'human' LIMIT 2")
+      .all(characterId) as { id: string }[];
+    if (owned.length !== 1) return null;
+    accountId = owned[0]!.id;
+  }
+  const label = db.prepare("SELECT label FROM accounts WHERE id = ?").get(accountId) as
+    { label: string } | undefined;
+  // Before an account's first dated name, it goes by its label, as places do.
+  return nameAt(db, "account", accountId, day) ?? label?.label ?? null;
 }
 
 /** Servers and group chats for the left column, the main server first. */
@@ -145,22 +174,27 @@ export function listPlaces(
     icon: string | null;
   }[];
   const places: PlaceSummary[] = [
-    ...servers.map((s) => ({
-      kind: "server" as const,
-      id: s.id,
-      version: s.version,
-      name: nameAt(db, "server", s.id, input.day) ?? s.label,
-      iconMediaId: serverIconAt(db, s.id, input.day),
-      color: s.color,
-      discordId: s.discordId,
-      isMain: s.id === details.mainServerId,
-    })),
+    ...servers.map((s) => {
+      const icon = serverIconOn(db, s.id, input.day);
+      return {
+        kind: "server" as const,
+        id: s.id,
+        version: s.version,
+        name: nameAt(db, "server", s.id, input.day) ?? s.label,
+        iconMediaId: icon?.mediaId ?? null,
+        iconStandIn: icon?.standIn ?? false,
+        color: s.color,
+        discordId: s.discordId,
+        isMain: s.id === details.mainServerId,
+      };
+    }),
     ...chats.map((c) => ({
       kind: "group_chat" as const,
       id: c.id,
       version: c.version,
       name: nameAt(db, "channel", c.id, input.day) ?? c.label,
       iconMediaId: c.icon,
+      iconStandIn: false,
       color: c.color,
       discordId: c.discordId,
       isMain: false,
@@ -202,16 +236,24 @@ export function linkNames(
 
 /* Full records */
 
+/** Links that block deleting a record, by what links to it, such as `{ artifacts: 3 }`. */
+export type Blockers = Record<string, number>;
+
 export interface AccountView {
   kind: "account";
   id: string;
   version: number;
   accountKind: "human" | "bot";
   label: string;
+  /** The latest observed name, or the label when none is recorded. */
+  name: string;
+  /** The latest known avatar, or null. */
+  avatarMediaId: string | null;
   discordId: string | null;
   discordCreatedAt: string | null;
   characterId: string | null;
   history: HistoryEntry[];
+  blockers: Blockers;
   createdAt: string;
   createdBy: string;
 }
@@ -225,6 +267,8 @@ export interface CharacterView {
   birthDay: string | null;
   metInPerson: "unknown" | "yes" | "no";
   fallbackMediaId: string | null;
+  /** Their latest picture and where it comes from. */
+  picture: Picture;
   /** Aliases, main accounts, and introductions. */
   history: HistoryEntry[];
   accounts: AccountView[];
@@ -232,9 +276,17 @@ export interface CharacterView {
   pictures: { mediaId: string; date: StoredDate | null; accountId: string | null }[];
   /**
    * Characters this one introduced, oldest first. Each introduction belongs to
-   * the history of the character who was introduced, so it is changed there.
+   * the history of the character who was introduced, so it is changed there,
+   * with that character's version.
    */
-  introduced: { characterId: string; knownName: string; date: StoredDate | null }[];
+  introduced: {
+    entryId: string;
+    characterId: string;
+    characterVersion: number;
+    knownName: string;
+    date: StoredDate | null;
+  }[];
+  blockers: Blockers;
   createdAt: string;
   createdBy: string;
 }
@@ -251,6 +303,7 @@ export interface ServerView {
   /** Names, icons, and owners. */
   history: HistoryEntry[];
   channels: ChannelView[];
+  blockers: Blockers;
   createdAt: string;
   createdBy: string;
 }
@@ -268,6 +321,7 @@ export interface ChannelView {
   discordId: string | null;
   discordCreatedAt: string | null;
   history: HistoryEntry[];
+  blockers: Blockers;
   createdAt: string;
   createdBy: string;
 }
@@ -280,15 +334,28 @@ function accountView(db: Database.Database, id: string): AccountView {
       `SELECT id, version, kind, label, discord_id AS discordId, character_id AS characterId, created_at AS createdAt, created_by AS createdBy
        FROM accounts WHERE id = ?`,
     )
-    .get(id) as Omit<AccountView, "kind" | "accountKind" | "discordCreatedAt" | "history"> & {
+    .get(id) as Omit<
+    AccountView,
+    "kind" | "accountKind" | "name" | "avatarMediaId" | "discordCreatedAt" | "history" | "blockers"
+  > & {
     kind: "human" | "bot";
   };
+  const avatar = db
+    .prepare(
+      `SELECT v.media_id AS mediaId FROM account_avatars v LEFT JOIN date_values d ON d.id = v.observed_date_id
+       WHERE v.account_id = ?
+       ORDER BY d.archive_day IS NULL, d.archive_day DESC, coalesce(d.instant_ms, 0) DESC, v.id DESC LIMIT 1`,
+    )
+    .get(id) as { mediaId: string } | undefined;
   return {
     ...row,
     kind: "account",
     accountKind: row.kind,
+    name: nameAt(db, "account", id) ?? row.label,
+    avatarMediaId: avatar?.mediaId ?? null,
     discordCreatedAt: discordCreatedAt(row.discordId),
     history: listHistory(db, "account", id),
+    blockers: entityBlockers(db, "account", id),
   };
 }
 
@@ -299,7 +366,10 @@ function channelView(db: Database.Database, id: string): ChannelView {
          icon_media_id AS iconMediaId, discord_id AS discordId, created_at AS createdAt, created_by AS createdBy
        FROM channels WHERE id = ?`,
     )
-    .get(id) as Omit<ChannelView, "kind" | "channelKind" | "discordCreatedAt" | "history"> & {
+    .get(id) as Omit<
+    ChannelView,
+    "kind" | "channelKind" | "discordCreatedAt" | "history" | "blockers"
+  > & {
     kind: ChannelView["channelKind"];
   };
   return {
@@ -308,6 +378,7 @@ function channelView(db: Database.Database, id: string): ChannelView {
     channelKind: row.kind,
     discordCreatedAt: discordCreatedAt(row.discordId),
     history: listHistory(db, "channel", id),
+    blockers: entityBlockers(db, "channel", id),
   };
 }
 
@@ -342,7 +413,10 @@ export function entityView(
       .prepare(
         "SELECT id, version, label, color, discord_id AS discordId, created_at AS createdAt, created_by AS createdBy FROM servers WHERE id = ?",
       )
-      .get(id) as Omit<ServerView, "kind" | "discordCreatedAt" | "isMain" | "history" | "channels">;
+      .get(id) as Omit<
+      ServerView,
+      "kind" | "discordCreatedAt" | "isMain" | "history" | "channels" | "blockers"
+    >;
     const channels = db
       .prepare("SELECT id FROM channels WHERE server_id = ? ORDER BY kind = 'thread', label, id")
       .all(id) as { id: string }[];
@@ -353,6 +427,7 @@ export function entityView(
       isMain: id === details.mainServerId,
       history: listHistory(db, "server", id),
       channels: channels.map((c) => channelView(db, c.id)),
+      blockers: entityBlockers(db, "server", id),
     };
   }
   const row = db
@@ -361,7 +436,10 @@ export function entityView(
          fallback_media_id AS fallbackMediaId, created_at AS createdAt, created_by AS createdBy
        FROM characters WHERE id = ?`,
     )
-    .get(id) as Omit<CharacterView, "kind" | "history" | "accounts" | "pictures" | "introduced">;
+    .get(id) as Omit<
+    CharacterView,
+    "kind" | "picture" | "history" | "accounts" | "pictures" | "introduced" | "blockers"
+  >;
   const accounts = (
     db.prepare("SELECT id FROM accounts WHERE character_id = ? ORDER BY label, id").all(id) as {
       id: string;
@@ -386,20 +464,28 @@ export function entityView(
   const introduced = (
     db
       .prepare(
-        `SELECT c.id AS characterId, c.known_name AS knownName, i.date_id AS dateId
+        `SELECT i.id AS entryId, c.id AS characterId, c.version AS characterVersion, c.known_name AS knownName, i.date_id AS dateId
          FROM introductions i JOIN characters c ON c.id = i.introduced_id
          LEFT JOIN date_values d ON d.id = i.date_id
          WHERE i.introducer_id = ?
          ORDER BY d.archive_day IS NULL, d.archive_day, c.known_name, c.id`,
       )
-      .all(id) as { characterId: string; knownName: string; dateId: string | null }[]
+      .all(id) as {
+      entryId: string;
+      characterId: string;
+      characterVersion: number;
+      knownName: string;
+      dateId: string | null;
+    }[]
   ).map(({ dateId, ...rest }) => ({ ...rest, date: dateId ? readDate(db, dateId) : null }));
   return {
     ...row,
     kind: "character",
+    picture: characterPictureAt(db, id),
     history: listHistory(db, "character", id),
     accounts,
     pictures,
     introduced,
+    blockers: entityBlockers(db, "character", id),
   };
 }

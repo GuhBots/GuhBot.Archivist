@@ -49,7 +49,12 @@ test("the service starts, answers its health check and the bot, and stops cleanl
 
   const health = await fetch(`${base}/api/health`);
   assert.equal(health.status, 200);
-  assert.deepEqual(await health.json(), { status: "ok" });
+  const healthBody = (await health.json()) as { status: string; instance: string };
+  assert.equal(healthBody.status, "ok");
+  // Each running copy names itself, so two copies behind one address can be told apart.
+  assert.match(healthBody.instance, /^[0-9a-f]{8}$/);
+  const again = (await (await fetch(`${base}/api/health`)).json()) as { instance: string };
+  assert.equal(again.instance, healthBody.instance);
 
   // The bot's credential works over a real socket, and owners come from the settings.
   const me = await fetch(`${base}/api/me`, {

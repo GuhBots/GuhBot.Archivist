@@ -80,6 +80,11 @@ export interface ArtifactDetails {
     hasPreview: boolean;
     readable: boolean;
     fileDateStatus: string;
+    /**
+     * Where the file date came from: tags embedded in the file, its name, or
+     * the modified time the uploader's computer reported. Null without one.
+     */
+    fileDateSource: "embedded" | "filename" | "modified" | null;
   };
   dates: {
     /** `basis` holds a reason given before exact dates stopped needing one. */
@@ -147,8 +152,9 @@ export function readArtifact(db: Database.Database, id: string): ArtifactDetails
   if (!row) return undefined;
   const metadata = JSON.parse(row.metadata_json) as {
     readable?: boolean;
-    fileDate?: { status?: string };
+    fileDate?: { status?: string; tier?: string | null };
   };
+  const tier = metadata.fileDate?.tier;
   const exact = readDate(db, row.exact_date_id);
   const estimated = readDate(db, row.estimated_date_id);
   const file = readDate(db, row.file_date_id);
@@ -188,6 +194,12 @@ export function readArtifact(db: Database.Database, id: string): ArtifactDetails
       hasPreview: row.preview_path !== null,
       readable: metadata.readable ?? true,
       fileDateStatus: metadata.fileDate?.status ?? "absent",
+      fileDateSource:
+        metadata.fileDate?.status !== "found"
+          ? null
+          : tier === "filename" || tier === "modified"
+            ? tier
+            : "embedded",
     },
     dates: {
       exact: exact ? { date: exact, basis: row.exact_basis } : null,

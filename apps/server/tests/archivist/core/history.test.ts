@@ -256,11 +256,13 @@ test("a character's picture follows their main account's avatar, then the fallba
     source: "avatar",
     accountId: first.id,
     mediaId: early.mediaId,
+    standIn: false,
   });
   assert.deepEqual(characterPictureAt(db, sam.id, "2021-02-01"), {
     source: "avatar",
     accountId: second.id,
     mediaId: later.mediaId,
+    standIn: false,
   });
   // Outside the timeline, the latest known picture is used.
   assert.equal(characterPictureAt(db, sam.id).source, "avatar");

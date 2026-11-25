@@ -55,6 +55,8 @@ export interface WebAppOptions {
   checkAnnouncementChannel?: IntakeOptions["checkAnnouncementChannel"];
   /** Switches Drive links to Google's official API. */
   driveApiKey?: string;
+  /** Lets the website read accounts' avatars from Discord by their IDs. */
+  discordBotToken?: string;
 }
 
 /** Requests larger than this are refused before any handler runs. Uploads use their own limit. */
@@ -172,6 +174,7 @@ export function buildWebApp(options: WebAppOptions): WebApp {
     ownerRecheckMs: options.ownerRecheckMs,
     fetch: options.fetch ?? fetch,
     logError: options.logError,
+    features: { discordLookups: Boolean(options.discordBotToken) },
   });
 
   const built = existsSync(join(options.frontendRoot, "index.html"));
@@ -205,6 +208,7 @@ export function buildWebApp(options: WebAppOptions): WebApp {
         auth,
         checkAnnouncementChannel: options.checkAnnouncementChannel,
         driveApiKey: options.driveApiKey,
+        discordBotToken: options.discordBotToken,
         fetch: options.fetch ?? fetch,
         logError: options.logError,
       });

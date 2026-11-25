@@ -41,7 +41,7 @@ Every error is `{code, message, details}`. `message` is safe to show the contrib
 
 | Status | Code | When |
 | --- | --- | --- |
-| `400` | `invalid_input` | Input the contributor can fix. `details.field` names the field. Reasons include `archive_required`, `zone_unconfirmed`, `acting_user_required`, and `mixed_credentials` |
+| `400` | `invalid_input` | Input the contributor can fix. `details.field` names the field. Reasons include `archive_required`, `acting_user_required`, and `mixed_credentials` |
 | `401` | `no_session` | The token is wrong (`invalid_service_token`) |
 | `403` | `forbidden` | The contributor sees the archive but may not do this, such as a member running an owner command. `service_only` for a browser on a bot route |
 | `404` | `archive_not_found`, `not_found` | No such archive or record, or the contributor cannot see it |
@@ -76,7 +76,7 @@ Every error is `{code, message, details}`. `message` is safe to show the contrib
 | `GET /api/archives/<id>/lookup/character-suggestions?typed=` | `{suggestions: [{name, value}]}` completing the last name in a comma-separated list, at most 25 |
 | `GET /api/archives/<id>/lookup/search?kind=&q=&limit=` | `{items: [{id, label}]}` for `artifact`, `character`, `account`, `server`, `channel`, `event`, or `request`. Channels also have `detail`: `group chat`, `direct message`, or their server's name. `limit` from 1 to 100, default 25 |
 | `GET /api/archives/<id>/lookup/names?character=&event=` | Display names by ID, repeating each parameter: `{characters: {id: name}, events: {id: title}}`. Unknown IDs map to `null` |
-| `GET /api/archives/<id>/date-preview?text=` | How typed text will be read with the contributor's preferences: `{value, archiveDay, assumedZone, display}`. `display` is `{local, zone, offset}` for a date and time, for the confirmation Discord shows |
+| `GET /api/archives/<id>/date-preview?text=` | How typed text will be read with the contributor's preferences: `{value, archiveDay, assumedZone, display}`. `display` is `{local, zone, offset}` for a date and time, which Discord may show before saving |
 
 ### Artifacts
 
@@ -151,9 +151,9 @@ These act for nobody, so they take the token without `X-Archivist-User`.
 ### Adding an Artifact
 
 1. Resolve the archive with `POST /api/me/archive-selection`, and the typed characters and event with the lookup routes. A refusal there is the reply.
-2. If the exact date has a time but no zone, call `GET /date-preview` and show `display` with Save and Cancel buttons. Send `zoneConfirmed=true` once the contributor saves.
+2. A time without a zone is read in the contributor's timezone, falling back to the archive's. The bot may call `GET /date-preview` and show `display` before saving. Since 2026-11-25 the service no longer requires `zoneConfirmed`, and it ignores the field when sent.
 3. Send `POST /artifacts/intake` as `multipart/form-data`, every field before the file:
-   * `description`, and optionally `exactDate`, `estimatedDay` with `estimateReason`, `zoneConfirmed`, and repeated `characters` and `events` IDs.
+   * `description`, and optionally `exactDate`, `estimatedDay` with `estimateReason`, and repeated `characters` and `events` IDs.
    * For an attachment, `discordAttachmentId` (the attachment's ID, its identity for duplicates) and `discordAttachmentUrl` (kept without its query), then the bytes as `file` with the attachment's file name. The bot downloads the attachment from Discord and streams it on.
    * For a Drive link, `driveLink` and no file. The service downloads it.
    * `submissionGuildId`, `submissionChannelId`, and `submissionMessageId` where known.

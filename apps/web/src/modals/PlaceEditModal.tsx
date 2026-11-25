@@ -1,19 +1,23 @@
 import { useCallback, useEffect, useState } from "react";
 import { PALETTE } from "../../../server/src/archivist/palette.js";
-import { api, ApiError, type EntityView, mediaUrl } from "../api.js";
+import { api, ApiError, type EntityView, type HistoryEntry, mediaUrl } from "../api.js";
 import { DateField } from "../components/DateField.js";
 import { FileDrop, IMAGE_ACCEPT } from "../components/FileDrop.js";
+import { blockersText, type HistoryChange, HistoryRows } from "../components/History.js";
 import { dayText } from "../format.js";
+import { navigate, viewPath } from "../router.js";
 import { useWindows } from "../Shell.js";
 import { useArchive } from "../state.js";
 import { ErrorNote, Modal } from "../ui.js";
+import { DeleteModal } from "./DeleteModal.js";
 
 type Place = Extract<EntityView, { kind: "server" | "channel" }>;
 
 /**
  * Edits a server or group chat directly: its name, Discord ID, lane color,
- * dated names and icons, and a server's channels. Each change saves at once
- * with the version just loaded, so nothing overwrites someone else's edit.
+ * dated names and icons, and a server's channels, and deletes it once
+ * nothing links to it. Each change saves at once with the version just
+ * loaded, so nothing overwrites someone else's edit.
  */
 export function PlaceEditModal(props: { kind: "server" | "channel"; id: string }) {
   const { archive, toast, changed } = useArchive();
@@ -73,6 +77,29 @@ export function PlaceEditModal(props: { kind: "server" | "channel"; id: string }
   const icons =
     place.kind === "server" ? place.history.filter((entry) => entry.kind === "server_icon") : [];
   const isGroupChat = place.kind === "channel" && place.channelKind === "group_chat";
+  const removeEntry = (entry: HistoryEntry, done: string) =>
+    run(
+      () =>
+        api(
+          `${base}/history/${entry.id}?historyKind=${entry.kind}&expectedVersion=${place.version}`,
+          { method: "DELETE" },
+        ),
+      done,
+    );
+  const editEntry = async (entry: HistoryEntry, change: HistoryChange) => {
+    let saved = false;
+    await run(async () => {
+      await api(`${base}/history/${entry.id}`, {
+        method: "PATCH",
+        json: { historyKind: entry.kind, expectedVersion: place.version, ...change },
+      });
+      saved = true;
+    }, "Saved.");
+    return saved;
+  };
+  const blocked = Object.keys(place.blockers).length > 0;
+  const kindName = isGroupChat ? "group chat" : place.kind === "server" ? "server" : "channel";
+  const reopen = () => windows.show(<PlaceEditModal kind={props.kind} id={props.id} />);
 
   return (
     <Modal
@@ -80,12 +107,40 @@ export function PlaceEditModal(props: { kind: "server" | "channel"; id: string }
       wide
       onClose={windows.close}
       footer={
-        <button className="btn primary" type="button" onClick={windows.close}>
-          Done
-        </button>
+        <>
+          <button
+            className="btn danger"
+            type="button"
+            disabled={blocked}
+            title={blocked ? "Remove what links to it first" : undefined}
+            onClick={() =>
+              windows.show(
+                <DeleteModal
+                  what={`the ${kindName} ${place.label}`}
+                  path={`/entities/${props.kind}/${place.id}`}
+                  version={place.version}
+                  onKeep={reopen}
+                  onDeleted={() => navigate(viewPath(archive.archiveId, "places"))}
+                />,
+              )
+            }
+          >
+            Delete {kindName}
+          </button>
+          <span className="grow" />
+          <button className="btn primary" type="button" onClick={windows.close}>
+            Done
+          </button>
+        </>
       }
     >
       <div className="content">
+        {blocked ? (
+          <p className="hint" style={{ margin: 0 }}>
+            To delete this {kindName}, first remove what links to it: {blockersText(place.blockers)}
+            .
+          </p>
+        ) : null}
         <div className="grid2">
           <label className="field">
             <span>Name before any dated name</span>
@@ -156,34 +211,17 @@ export function PlaceEditModal(props: { kind: "server" | "channel"; id: string }
 
         <div className="field">
           <span>Names, each with the day it started</span>
-          {names.length ? null : (
-            <span className="hint">No dated names yet; it goes by "{place.label}".</span>
-          )}
-          {names.map((entry) => (
-            <div key={entry.id} className="hist-row">
-              <span>{entry.name}</span>
-              <span className="hint">
-                {entry.date ? `from ${dayText(entry.date.archiveDay)}` : "date unknown"}
-              </span>
-              <button
-                className="btn ghost"
-                type="button"
-                aria-label={`Remove the name ${entry.name}`}
-                onClick={() =>
-                  run(
-                    () =>
-                      api(
-                        `${base}/history/${entry.id}?historyKind=${nameKind}&expectedVersion=${place.version}`,
-                        { method: "DELETE" },
-                      ),
-                    "Removed the name.",
-                  )
-                }
-              >
-                ✕
-              </button>
-            </div>
-          ))}
+          <HistoryRows
+            entries={names}
+            editing
+            empty={`No dated names yet; it goes by "${place.label}".`}
+            dates={(entry) =>
+              entry.date ? `from ${dayText(entry.date.archiveDay)}` : "date unknown"
+            }
+            render={(entry) => entry.name}
+            onRemove={(entry) => removeEntry(entry, "Removed the name.")}
+            onEdit={editEntry}
+          />
           <div className="grid2">
             <label className="field">
               <span>New name</span>
@@ -231,37 +269,24 @@ export function PlaceEditModal(props: { kind: "server" | "channel"; id: string }
                   <img src={mediaUrl(archive.archiveId, place.iconMediaId)} alt="Current icon" />
                 </span>
               ) : null}
-              {icons.map((entry) => (
-                <span key={entry.id} className="icon-entry">
-                  <span className="av lg">
+            </div>
+            {isGroupChat ? null : (
+              <HistoryRows
+                entries={icons}
+                editing
+                empty="No icons yet."
+                render={(entry) => (
+                  <span className="av sm">
                     <img
                       src={mediaUrl(archive.archiveId, entry.mediaId!)}
                       alt={`Icon ${entry.date ? `from ${dayText(entry.date.archiveDay)}` : ""}`}
                     />
                   </span>
-                  <span className="hint">
-                    {entry.date ? dayText(entry.date.archiveDay) : "date unknown"}
-                  </span>
-                  <button
-                    className="btn ghost"
-                    type="button"
-                    aria-label="Remove this icon"
-                    onClick={() =>
-                      run(
-                        () =>
-                          api(
-                            `${base}/history/${entry.id}?historyKind=server_icon&expectedVersion=${place.version}`,
-                            { method: "DELETE" },
-                          ),
-                        "Removed the icon.",
-                      )
-                    }
-                  >
-                    ✕
-                  </button>
-                </span>
-              ))}
-            </div>
+                )}
+                onRemove={(entry) => removeEntry(entry, "Removed the icon.")}
+                onEdit={editEntry}
+              />
+            )}
             <div className="grid2">
               <FileDrop
                 label={isGroupChat ? "Replace the icon" : "Add an icon"}
@@ -306,7 +331,30 @@ export function PlaceEditModal(props: { kind: "server" | "channel"; id: string }
           <div className="field">
             <span>Channels</span>
             {place.channels.map((channel) => (
-              <ChannelRow key={channel.id} channel={channel} onRun={run} />
+              <ChannelRow
+                key={channel.id}
+                channel={channel}
+                onRun={run}
+                onDelete={() => {
+                  if (Object.keys(channel.blockers).length) {
+                    setError(
+                      new Error(
+                        `#${channel.label} is still linked from ${blockersText(channel.blockers)}. Remove those links first.`,
+                      ),
+                    );
+                    return;
+                  }
+                  windows.show(
+                    <DeleteModal
+                      what={`the channel #${channel.label}`}
+                      path={`/entities/channel/${channel.id}`}
+                      version={channel.version}
+                      onKeep={reopen}
+                      onDeleted={reopen}
+                    />,
+                  );
+                }}
+              />
             ))}
             <div className="jump">
               <input
@@ -350,6 +398,7 @@ export function PlaceEditModal(props: { kind: "server" | "channel"; id: string }
 function ChannelRow(props: {
   channel: Extract<EntityView, { kind: "channel" }>;
   onRun(action: () => Promise<unknown>, done: string): Promise<void>;
+  onDelete(): void;
 }) {
   const { archive } = useArchive();
   const [label, setLabel] = useState(props.channel.label);
@@ -383,12 +432,7 @@ function ChannelRow(props: {
         className="btn ghost"
         type="button"
         aria-label={`Delete #${props.channel.label}`}
-        onClick={() =>
-          props.onRun(
-            () => api(`${url}?expectedVersion=${props.channel.version}`, { method: "DELETE" }),
-            "Deleted the channel.",
-          )
-        }
+        onClick={props.onDelete}
       >
         ✕
       </button>

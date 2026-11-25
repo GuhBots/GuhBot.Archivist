@@ -20,7 +20,7 @@ This directory came from `src/archivist/` in GuhBot.Discord, at commits `d4b46a8
 | `paths.ts` | Archive folder layout, archive ID validation, and containment of stored paths |
 | `edit-log.ts` | The `edits.log` line format, removal of a deleted record's lines, and durable file writes |
 | `mutations.ts` | Journaled archive changes that keep the database, edit log, and bot-database follow-ups consistent across crashes |
-| `metadata.ts` | Reads embedded metadata with ExifTool and picks the file date from the plan's field map |
+| `metadata.ts` | Reads embedded metadata with ExifTool and picks the file date from the plan's field map, then from the file's name or the uploader's modified time when it has none |
 | `media.ts` | Stages intake files, checks their real format and size, hashes them, makes previews, and moves originals into an archive |
 | `records.ts` | Shared helpers for record operations, such as opening an archive for an actor, link checks, and field diffs |
 | `date-store.ts` | Stores immutable date rows and removes rows nothing refers to |

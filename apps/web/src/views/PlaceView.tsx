@@ -9,7 +9,7 @@ import {
 } from "../api.js";
 import { Thumb } from "../components/Media.js";
 import { useCharacterNames } from "../components/use-names.js";
-import { basisText, dayText, MONTHS, MONTHS_LONG, monthText } from "../format.js";
+import { basisText, byteText, dayText, MONTHS, MONTHS_LONG, monthText } from "../format.js";
 import { AddMenu } from "../components/AddMenu.js";
 import type { PickedPlace } from "../components/PlacePicker.js";
 import { FiltersModal } from "../modals/FiltersModal.js";
@@ -325,6 +325,7 @@ function PlaceList(props: {
                 <span className="sub">
                   <span>{dayText(item.day)}</span>
                   <span className={`basis ${item.basis}`}>{basisText(item.basis)}</span>
+                  <span>{byteText(item.media.byteLength)}</span>
                   {where.length ? <span>#{where.join(", #")}</span> : null}
                   <span>{item.characterIds.map((id) => props.names[id] ?? "…").join(", ")}</span>
                   {item.unidentifiedCharacters ? (

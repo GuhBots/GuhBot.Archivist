@@ -18,6 +18,11 @@ export interface ServiceConfig {
   serviceToken: string | null;
   /** Switches public Drive links to Google's official API. */
   driveApiKey: string | undefined;
+  /**
+   * A Discord bot token, so the website can read accounts' avatars by their
+   * Discord IDs. Any bot works. Without it, those lookups are off.
+   */
+  discordBotToken?: string;
   /** The built website. */
   frontendRoot: string;
 }
@@ -74,6 +79,7 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): ServiceConfig 
     ownerIds: parseOwnerIds(setting(env, "ARCHIVIST_OWNER_IDS")),
     serviceToken: setting(env, "ARCHIVIST_SERVICE_TOKEN") ?? null,
     driveApiKey: setting(env, "GOOGLE_DRIVE_API_KEY"),
+    discordBotToken: setting(env, "DISCORD_BOT_TOKEN"),
     frontendRoot: DEFAULT_FRONTEND_ROOT,
   };
 }

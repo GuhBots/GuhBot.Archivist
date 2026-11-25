@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import Database from "better-sqlite3";
@@ -55,6 +56,7 @@ export interface ServiceAppOptions {
 /** The service's HTTP app: the website and its routes, plus the bot's API and a health check. */
 export function buildServiceApp(options: ServiceAppOptions): FastifyInstance {
   const { context, config, logError } = options;
+  const instance = randomUUID().slice(0, 8);
   const service = serviceAuth({ token: config.serviceToken, ownerIds: config.ownerIds });
   return buildWebApp({
     context,
@@ -66,10 +68,13 @@ export function buildServiceApp(options: ServiceAppOptions): FastifyInstance {
     hasServiceCredential: service.hasCredential,
     frontendRoot: config.frontendRoot,
     driveApiKey: config.driveApiKey,
+    discordBotToken: config.discordBotToken,
     logError,
     fetch: options.fetch,
     extend(scope, auth) {
-      scope.get("/api/health", async () => ({ status: "ok" }));
+      // `instance` differs between running copies, so repeated checks show whether
+      // more than one copy answers at the same address, such as two tunnel connectors.
+      scope.get("/api/health", async () => ({ status: "ok", instance }));
       registerBotRoutes(scope, context, auth);
       registerAdminRoutes(scope, context, auth, logError);
       registerAnnouncementRoutes(scope, context, service, logError);

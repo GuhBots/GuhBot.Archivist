@@ -444,7 +444,12 @@ function timelineMarkers(
       day: row.day,
       characterId: row.characterId!,
       accountId: row.accountId,
-      picture: { source: "avatar", accountId: row.accountId, mediaId: row.mediaId! },
+      picture: {
+        source: "avatar",
+        accountId: row.accountId,
+        mediaId: row.mediaId!,
+        standIn: false,
+      },
       name: null,
     });
   }

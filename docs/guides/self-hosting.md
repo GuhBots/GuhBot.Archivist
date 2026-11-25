@@ -87,6 +87,7 @@ Each setting is described in `.env.example`. These need your attention before th
 | `ARCHIVIST_SESSION_SECRET` | A new random value from `openssl rand -hex 32`. Changing it signs everyone out |
 | `ARCHIVIST_SERVICE_TOKEN` | The Discord bot's credential, from `openssl rand -hex 32`, as [Connecting the Bot](connecting-the-bot.md) explains. Leave it empty until the bot is connected |
 | `GOOGLE_DRIVE_API_KEY` | Optional. Public Drive links work without it |
+| `DISCORD_BOT_TOKEN` | Optional. Lets the website fetch an account's current avatar from its Discord ID, because Discord shows other people's profiles only to bots. In the [Developer Portal](https://discord.com/developers/applications), create an application, open **Bot**, and copy its token. The bot needs no servers, intents, or permissions. Use an application other than the GuhBot bot's, so the bot's own token stays with the bot |
 | `ARCHIVIST_PUBLISH` | Where the host publishes the website's port. The default, `127.0.0.1:3000`, keeps it reachable only from the machine itself, which is all a Cloudflare Tunnel or a reverse proxy on the same machine needs |
 
 Signing in only lets in owners and Discord users on at least one archive's whitelist. Everyone else sees that they have no access yet.
@@ -249,6 +250,7 @@ By default the website's port is published on the machine's loopback address onl
 * **"No access yet" after signing in:** The Discord account is not an owner and is on no archive's whitelist. An owner adds it with `/archivist-admin whitelist add` in Discord.
 * **The service stops at start with a settings message:** It names the missing or wrong setting, such as `ARCHIVIST_OWNER_IDS` or a session secret shorter than 32 bytes.
 * **Large uploads fail with 413 behind the tunnel:** Cloudflare refused the request. See [Your Own Domain With Cloudflare Tunnel](#your-own-domain-with-cloudflare-tunnel).
+* **You are signed out every so often, or see "No archives yet" although you have archives:** More than one copy of Archivist is answering at the same address. Usually a second machine runs `cloudflared` with the same `TUNNEL_TOKEN`, so Cloudflare splits visitors between the two connectors. Each copy has its own data, so a session from one is unknown to the other. To check, request `<ARCHIVIST_BASE_URL>/api/health` several times: each running copy reports its own `instance`, so two different values mean two copies. In Cloudflare's dashboard, the tunnel's page lists its connectors, and a healthy setup shows one. Stop `cloudflared` on the other machine, or give it a tunnel and hostname of its own.
 
 * **`exec format error`:** The image does not match the machine's processor. On a Raspberry Pi, check that the system is 64-bit with `uname -m`, which should print `aarch64`.
 * **`denied` or `unauthorized` when pulling:** The package is private, the image name in `compose.yaml` is wrong, or nothing has been published yet. See [Private Images](#private-images).

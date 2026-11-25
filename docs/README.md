@@ -21,8 +21,13 @@ The repository's documents are listed below. [Documentation](documentation.md) e
 * [Releasing](guides/releasing.md) covers version numbers, releases, and published images.
 * [Template Usage](guides/template-usage.md) covers the template this repository started from.
 
+## Proposals
+
+* [Proposal Index](proposals/README.md) lists the proposals.
+* [Archivist Plan](proposals/ARCHIVIST-PLAN.md) is the product specification: accepted requirements, the service migration, interface contracts, milestones, and verification criteria.
+
 ## Design
 
 * [Bot API](design/bot-api.md) is the contract between the service and the Discord bot.
 
-The product specification is the [Archivist plan](https://github.com/GuhBots/GuhBot.Discord/blob/feat/archivist/docs/proposals/ARCHIVIST-PLAN.md) in the GuhBot.Discord repository. Component documents are linked from each workspace's README.
+Component documents are linked from each workspace's README.

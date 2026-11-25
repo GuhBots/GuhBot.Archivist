@@ -1,6 +1,6 @@
 # Archivist
 
-The archive rules and storage of the Archivist service, specified by the [Archivist plan](https://github.com/GuhBots/GuhBot.Discord/blob/feat/archivist/docs/proposals/ARCHIVIST-PLAN.md) in the GuhBot.Discord repository. The website's routes in `web/` call these operations, and the Discord bot reaches the same routes over the JSON API, so every interface applies the same validation, permissions, dates, logging, and deletion rules.
+The archive rules and storage of the Archivist service, specified by the [Archivist plan](../../../../docs/proposals/ARCHIVIST-PLAN.md). The website's routes in `web/` call these operations, and the Discord bot reaches the same routes over the JSON API, so every interface applies the same validation, permissions, dates, logging, and deletion rules.
 
 This directory came from `src/archivist/` in GuhBot.Discord, at commits `d4b46a8` and `2e7c752`, when Archivist ran inside the bot. It holds storage, the archive registry, permissions, preferences, media staging, artifacts, entities and their dated history, events, missing-media requests, the research board, character merge, and exports.
 

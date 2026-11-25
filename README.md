@@ -2,7 +2,7 @@
 
 Archivist preserves the history of a Discord community: original photos, videos, and audio, the people in them, and the events they show, in independent archives that can be exported and opened without GuhBot. This repository is the Archivist service. It holds the archives, their media, and their rules, and serves the website people use to add, edit, and research them.
 
-The [GuhBot Discord bot](https://github.com/GuhBots/GuhBot.Discord) offers quick Archivist commands, such as adding an artifact from Discord, by calling this service's API. The two run as separate services, possibly on different machines. The [Archivist plan](https://github.com/GuhBots/GuhBot.Discord/blob/feat/archivist/docs/proposals/ARCHIVIST-PLAN.md) specifies the product.
+The [GuhBot Discord bot](https://github.com/GuhBots/GuhBot.Discord) offers quick Archivist commands, such as adding an artifact from Discord, by calling this service's API. The two run as separate services, possibly on different machines. The [Archivist plan](docs/proposals/ARCHIVIST-PLAN.md) specifies the product.
 
 ## Start Here
 

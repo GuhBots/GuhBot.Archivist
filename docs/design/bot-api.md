@@ -1,6 +1,6 @@
 # Bot API
 
-The Archivist service holds every archive, its media, and its rules. The GuhBot Discord bot keeps its Archivist commands as thin clients of the service's JSON API. This document is the contract between them. The [Archivist plan](https://github.com/GuhBots/GuhBot.Discord/blob/feat/archivist/docs/proposals/ARCHIVIST-PLAN.md) specifies the product rules. The source of truth for request and response shapes is the server code in [`apps/server`](../../apps/server/README.md).
+The Archivist service holds every archive, its media, and its rules. The GuhBot Discord bot keeps its Archivist commands as thin clients of the service's JSON API. This document is the contract between them. The [Archivist plan](../proposals/ARCHIVIST-PLAN.md) specifies the product rules. The source of truth for request and response shapes is the server code in [`apps/server`](../../apps/server/README.md).
 
 ## Addresses and Transport
 

@@ -16,7 +16,11 @@ export function Modal(props: {
   onKey?: (event: KeyboardEvent) => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
-  const { onClose, onKey } = props;
+  // The handlers can change while the window stays open, such as when an
+  // album steps to the next artifact. Reading them through a ref keeps focus
+  // where it is instead of moving it back to the first control.
+  const handlers = useRef({ onClose: props.onClose, onKey: props.onKey });
+  handlers.current = { onClose: props.onClose, onKey: props.onKey };
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     const first = box.current?.querySelector<HTMLElement>(
@@ -24,15 +28,16 @@ export function Modal(props: {
     );
     first?.focus();
     const keys = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-      else onKey?.(event);
+      if (event.key === "Escape") handlers.current.onClose();
+      else handlers.current.onKey?.(event);
     };
     document.addEventListener("keydown", keys);
     return () => {
       document.removeEventListener("keydown", keys);
       previous?.focus?.();
     };
-  }, [onClose, onKey]);
+  }, []);
+  const { onClose } = props;
   return (
     <div
       className="backdrop"
@@ -60,10 +65,14 @@ export function Modal(props: {
   );
 }
 
-/** A character's or place's picture, with initials when none is known. */
+/**
+ * A character's or place's picture, with initials when none is known. A
+ * fallback picture carries an F, and a stand-in, a picture not known for the
+ * date shown, carries a ~, so neither passes for verified history.
+ */
 export function Avatar(props: {
   archiveId: string;
-  picture: Picture | { mediaId: string | null } | null;
+  picture: Picture | { mediaId: string | null; standIn?: boolean } | null;
   name: string;
   size?: "xs" | "sm" | "lg" | "xl";
   color?: string;
@@ -71,6 +80,7 @@ export function Avatar(props: {
   const mediaId = props.picture && "mediaId" in props.picture ? props.picture.mediaId : null;
   const fallback =
     props.picture && "source" in props.picture && props.picture.source === "fallback";
+  const standIn = Boolean(props.picture && "standIn" in props.picture && props.picture.standIn);
   if (!mediaId) {
     return (
       <span
@@ -84,7 +94,17 @@ export function Avatar(props: {
   }
   // Originals, so an animated GIF avatar plays as it was uploaded.
   return (
-    <span className={`av ${props.size ?? ""} ${fallback ? "fallback" : ""}`} aria-hidden="true">
+    <span
+      className={`av ${props.size ?? ""} ${fallback ? "fallback" : standIn ? "standin" : ""}`}
+      aria-hidden="true"
+      title={
+        fallback
+          ? "Fallback picture, not from an account"
+          : standIn
+            ? "Latest known picture. None is recorded for this date."
+            : undefined
+      }
+    >
       <img src={mediaUrl(props.archiveId, mediaId)} alt="" loading="lazy" />
     </span>
   );

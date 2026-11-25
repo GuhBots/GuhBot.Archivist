@@ -38,7 +38,7 @@ export interface WebHarness {
 
 /** What a test may replace: the Discord channel check, the network, and the Drive key. */
 export type WebOverrides = Partial<
-  Pick<WebAppOptions, "checkAnnouncementChannel" | "fetch" | "driveApiKey">
+  Pick<WebAppOptions, "checkAnnouncementChannel" | "fetch" | "driveApiKey" | "discordBotToken">
 >;
 
 /** The website on an in-memory request injector, with a temporary data directory. */

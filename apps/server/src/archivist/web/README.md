@@ -11,11 +11,12 @@ The website's server side: sign-in, the JSON routes, media, and the built pages.
 | `sessions.ts` | Sessions and sign-in states in the operational database, stored as token hashes |
 | `read-routes.ts` | Read routes under `/api/archives`: archives, places, artifacts, events, entities, requests, the board, and search |
 | `change-routes.ts` | Routes that change an archive: entities and their history, merge, artifacts, events, requests and their buckets, the board, and the date preview |
-| `intake-routes.ts` | Adding artifacts from the website or the bot (upload, Discord attachment, or Drive link), duplicate review, entity picture uploads, and the logs channel |
+| `intake-routes.ts` | Adding artifacts from the website or the bot (upload, Discord attachment, or Drive link), duplicate review, entity picture uploads, Discord avatar lookups, and the logs channel |
 | `media-routes.ts` | Media originals and previews, with byte ranges, and the edit-log download |
 | `reviews.ts` | Duplicate reviews waiting for the contributor's choices, in memory for 15 minutes |
 | `view-routes.ts` | The timeline, calendar, heatmap, and graph data |
 | `discord-oauth.ts` | Discord's OAuth endpoints over plain HTTPS: the sign-in link, code exchange, identity, and token revocation |
+| `discord-profiles.ts` | Reading an account's current Discord avatar by its Discord ID with `DISCORD_BOT_TOKEN`, and recording it as an avatar observed today |
 
 The service passes in what this app cannot decide by itself: who the owners are, and how a request carrying the bot's service credential names its contributor. A browser cannot set the logs channel, because only the bot can check a Discord channel's permissions.
 

@@ -229,6 +229,7 @@ test("signing in with Discord creates a seven-day session and keeps no Discord t
     via: "session",
     sessionExpires: new Date(NOW.getTime() + 7 * 24 * 3600_000).toISOString(),
     preferences: { timeZone: null, dateOrder: "ymd" },
+    features: { discordLookups: false },
   });
 
   // Seven days later the session is gone, whatever happened in between.

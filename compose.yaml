@@ -27,6 +27,7 @@ services:
       # Empty turns the Discord bot's access off. The website keeps working.
       ARCHIVIST_SERVICE_TOKEN: ${ARCHIVIST_SERVICE_TOKEN:-}
       GOOGLE_DRIVE_API_KEY: ${GOOGLE_DRIVE_API_KEY:-}
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
       # The container always listens on 0.0.0.0:3000. ARCHIVIST_PUBLISH below
       # decides who can reach it.
       ARCHIVIST_HOST: 0.0.0.0

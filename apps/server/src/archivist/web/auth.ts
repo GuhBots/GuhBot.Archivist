@@ -83,6 +83,8 @@ export interface AuthOptions {
    * fall back to the cookie, and throws to refuse the request.
    */
   identify?(request: FastifyRequest): Delegated | null;
+  /** Optional abilities the website shows controls for, such as Discord lookups. */
+  features?: { discordLookups: boolean };
 }
 
 export interface Auth {
@@ -185,6 +187,7 @@ export function createAuth(options: AuthOptions): Auth {
         via,
         sessionExpires: session ? new Date(session.expiresMs).toISOString() : null,
         preferences: preferences(actor),
+        features: options.features ?? { discordLookups: false },
       };
     });
 

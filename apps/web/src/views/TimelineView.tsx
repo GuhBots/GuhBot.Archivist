@@ -15,7 +15,15 @@ import {
   type TimelineLane,
   type TimelineView as Timeline,
 } from "../api.js";
-import { dayNumber, dayOfNumber, dayText, initials, MONTHS, monthText } from "../format.js";
+import {
+  dayNumber,
+  dayOfNumber,
+  dayText,
+  initials,
+  MONTHS,
+  monthText,
+  todayIn,
+} from "../format.js";
 import { AddMenu } from "../components/AddMenu.js";
 import { FiltersModal } from "../modals/FiltersModal.js";
 import { characterPath, navigate } from "../router.js";
@@ -937,6 +945,14 @@ export function TimelineView() {
             onClick={() => setCenter(center - 300 / ppd)}
           >
             ◀
+          </button>
+          <button
+            className="btn"
+            type="button"
+            title="Center the timeline on today"
+            onClick={() => setCenter(dayNumber(todayIn(archive.timezone)))}
+          >
+            Today
           </button>
           <button
             className="btn"

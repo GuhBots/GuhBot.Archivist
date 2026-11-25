@@ -11,23 +11,20 @@ interface Preview {
 
 /**
  * A typed date with how it will be read, using the contributor's timezone
- * and date order. A time typed without a zone must be confirmed, as Discord
- * asks for it.
+ * and date order. A time typed without a zone is read in the contributor's
+ * timezone, or the archive's, and the reading shows that zone.
  */
 export function DateField(props: {
   archiveId: string;
   label: string;
   value: string;
   onChange(value: string): void;
-  confirmed?: boolean;
-  onConfirm?(confirmed: boolean): void;
   placeholder?: string;
   hint?: string;
 }) {
   const [preview, setPreview] = useState<Preview | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const typed = useSettled(props.value, 250);
-  const { onConfirm } = props;
   useEffect(() => {
     if (!typed.trim()) {
       setPreview(null);
@@ -41,7 +38,6 @@ export function DateField(props: {
       .then((result) => {
         setPreview(result);
         setProblem(null);
-        onConfirm?.(false);
       })
       .catch((error: unknown) => {
         if ((error as Error).name === "AbortError") return;
@@ -49,7 +45,7 @@ export function DateField(props: {
         setProblem(error instanceof ApiError ? error.message : "That date could not be read.");
       });
     return () => controller.abort();
-  }, [typed, props.archiveId, onConfirm]);
+  }, [typed, props.archiveId]);
   let reading: string | null = null;
   if (preview?.value.kind === "instant" && preview.value.instantMs !== undefined) {
     reading = `${new Date(preview.value.instantMs).toLocaleString("en-US", {
@@ -70,17 +66,6 @@ export function DateField(props: {
       />
       {reading ? <span className="hint">Read as {reading}</span> : null}
       {problem ? <span className="error-note">{problem}</span> : null}
-      {preview?.assumedZone && props.onConfirm ? (
-        <span className="checks">
-          <input
-            type="checkbox"
-            checked={Boolean(props.confirmed)}
-            onChange={(event) => props.onConfirm!(event.target.checked)}
-          />
-          Yes, that time is right. To use another zone, add it after the time, such as Europe/London
-          or -04:00.
-        </span>
-      ) : null}
       {props.hint ? <span className="hint">{props.hint}</span> : null}
     </label>
   );

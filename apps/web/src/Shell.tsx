@@ -132,8 +132,9 @@ export function Shell() {
     () => ({
       show: setModal,
       close,
-      openArtifact: (id, nav) =>
-        setModal(<ArtifactModal key={`${id}:${nav?.index ?? ""}`} id={id} nav={nav} />),
+      // One key for every artifact, so stepping through an album swaps the
+      // window's contents instead of closing it and opening another.
+      openArtifact: (id, nav) => setModal(<ArtifactModal key="artifact" id={id} nav={nav} />),
       openEvent: (id) => setModal(<EventModal key={id} id={id} />),
     }),
     [close],
@@ -513,7 +514,7 @@ function PlacesColumn(props: { open: boolean; selected: string | null }) {
             {place.iconMediaId ? (
               <Avatar
                 archiveId={archive.archiveId}
-                picture={{ mediaId: place.iconMediaId }}
+                picture={{ mediaId: place.iconMediaId, standIn: place.iconStandIn }}
                 name={place.name}
               />
             ) : (
@@ -577,7 +578,8 @@ function CharactersColumn(props: { open: boolean; selected: string | null }) {
           />
           <span>
             <span className="nm">{character.knownName}</span>
-            <small>{character.realName ?? ""}</small>
+            {/* Their main account, so the list does not show real names. */}
+            <small>{character.mainAccount ?? ""}</small>
           </span>
         </button>
       ))}

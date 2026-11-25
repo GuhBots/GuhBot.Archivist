@@ -175,7 +175,7 @@ test("an upload from the website becomes an announced artifact, and its media st
   assert.match(log.body, new RegExp(sam.id));
 });
 
-test("uploads are checked before the file is kept, and a time without a zone must be confirmed", async (t) => {
+test("uploads are checked before the file is kept, and a time without a zone needs no confirmation", async (t) => {
   const { h, cookie, upload, staging, announced } = await setup(t);
   const bytes = await pngBytes(t);
   const file = { name: "a.png", bytes };
@@ -188,12 +188,6 @@ test("uploads are checked before the file is kept, and a time without a zone mus
     file,
   );
   assert.equal(badLink.status, 400);
-  const unconfirmed = await upload(
-    { description: "Late night", exactDate: "2019-07-15 6:30pm" },
-    file,
-  );
-  assert.equal(unconfirmed.status, 400);
-  assert.equal(unconfirmed.body.details.reason, "zone_unconfirmed");
   // A field after the file could not be checked before the file was kept, so it is refused.
   const late = await upload({ description: "Late field" }, file, cookie, {
     exactDate: "2019-08-03",
@@ -211,12 +205,11 @@ test("uploads are checked before the file is kept, and a time without a zone mus
   assert.equal(staging(), 0);
   assert.deepEqual(announced(), []);
 
-  const confirmed = await upload(
-    { description: "Late night", exactDate: "2019-07-15 6:30pm", zoneConfirmed: "true" },
-    file,
-  );
-  assert.equal(confirmed.status, 201);
-  assert.equal(confirmed.body.artifact.dates.exact.date.kind, "instant");
+  // A time without a zone is read in the contributor's timezone, or the archive's, with no confirmation.
+  const night = await upload({ description: "Late night", exactDate: "2019-07-15 6:30pm" }, file);
+  assert.equal(night.status, 201);
+  assert.equal(night.body.artifact.dates.exact.date.kind, "instant");
+  assert.equal(night.body.artifact.dates.exact.date.timezone, "America/Toronto");
 
   assert.equal((await upload({ description: "Nothing" })).status, 400);
   const both = await upload(
@@ -461,4 +454,51 @@ test("pictures for records upload with the same checks: dated avatars and icons,
     ).status,
     404,
   );
+});
+
+test("a website upload with no date inside takes one from its name, then from the computer's modified time", async (t) => {
+  const { upload, get } = await setup(t, {}, { logsChannel: false });
+  // Sharp writes no date tags, like many screenshot tools.
+  const bytes = await pngBytes(t);
+  const modifiedMs = Date.UTC(2020, 1, 3, 15, 0);
+
+  const named = await upload(
+    { description: "Named", fileModified: String(modifiedMs) },
+    { name: "Screenshot from 2019-07-15 18-30-12.png", bytes },
+  );
+  assert.equal(named.status, 201, JSON.stringify(named.body));
+  assert.equal(named.body.artifact.media.fileDateSource, "filename");
+  assert.equal(named.body.artifact.dates.file.archiveDay, "2019-07-15");
+  assert.equal(named.body.artifact.dates.selected.basis, "file");
+
+  const modified = await upload(
+    { description: "Modified", fileModified: String(modifiedMs) },
+    { name: "shot.png", bytes },
+  );
+  assert.equal(modified.body.artifact.media.fileDateSource, "modified");
+  assert.equal(modified.body.artifact.dates.file.instantMs, modifiedMs);
+  // MEMBER has no timezone of their own, so the archive's is used to show it.
+  assert.equal(modified.body.artifact.dates.file.timezone, "America/Toronto");
+  assert.equal(modified.body.artifact.dates.file.archiveDay, "2020-02-03");
+
+  // No modified time, or an impossible one, leaves the artifact undated.
+  for (const fields of [{}, { fileModified: "0" }, { fileModified: "soon" }] as Record<
+    string,
+    string
+  >[]) {
+    const plain = await upload({ description: "Plain", ...fields }, { name: "shot.png", bytes });
+    assert.equal(plain.status, 201);
+    assert.equal(plain.body.artifact.dates.file, null);
+    assert.equal(plain.body.artifact.media.fileDateSource, null);
+    assert.equal(plain.body.artifact.dates.selected, null);
+  }
+
+  // The album shows each file's size and the size of everything that matches.
+  const page = JSON.parse((await get("/artifacts?limit=2")).body);
+  assert.equal(page.total, 5);
+  assert.equal(page.totalBytes, bytes.length * 5);
+  assert.equal(page.items[0].media.byteLength, bytes.length);
+  const filtered = JSON.parse((await get("/artifacts?q=Named")).body);
+  assert.equal(filtered.total, 1);
+  assert.equal(filtered.totalBytes, bytes.length);
 });

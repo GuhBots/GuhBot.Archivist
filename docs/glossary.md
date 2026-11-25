@@ -18,10 +18,12 @@ Add or update definitions when terminology changes, and link to them from other 
 | CI | Continuous integration |
 | CLI | Command-line interface |
 | CRLF | Carriage return and line feed, the line ending used by Windows |
+| EDT | Eastern Daylight Time, a zone abbreviation. Abbreviations like it mean different offsets in different places, so Archivist never reads a zone from one |
 | ES | ECMAScript, the standard that JavaScript follows. ES modules use `import` and `export` |
 | FLAC | Free Lossless Audio Codec, an audio file format |
 | GHCR | GitHub Container Registry, where this repository publishes its images |
 | GIF | Graphics Interchange Format, an image format that can be animated |
+| GNOME | A Linux desktop, Fedora's and Ubuntu's default. Its screenshots record their time as text |
 | HTML | Hypertext Markup Language, the format of web pages |
 | HTTP | Hypertext Transfer Protocol, the protocol web browsers and servers use |
 | HTTPS | Hypertext Transfer Protocol Secure, the encrypted protocol for websites |

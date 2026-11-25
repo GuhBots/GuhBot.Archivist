@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { byteText } from "../format.js";
 
 /**
  * What the archive accepts, for file pickers. The extensions are listed as
@@ -45,12 +46,6 @@ export function accepts(accept: string, file: { name: string; type: string }): b
           ? type.startsWith(token.slice(0, -1))
           : type === token,
     );
-}
-
-function sizeText(bytes: number): string {
-  if (bytes < 1024) return `${bytes} bytes`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KiB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
 }
 
 /**
@@ -110,7 +105,7 @@ export function FileDrop(props: {
           <span className="drop-choose">Choose a file</span> or drop one here
         </span>
         <span className="drop-file">
-          {props.file ? `${props.file.name} · ${sizeText(props.file.size)}` : "No file chosen"}
+          {props.file ? `${props.file.name} · ${byteText(props.file.size)}` : "No file chosen"}
         </span>
       </label>
       {refused ? (

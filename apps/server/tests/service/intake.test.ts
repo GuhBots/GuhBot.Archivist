@@ -432,8 +432,8 @@ test("the bot's upload is refused before anything is kept when a field comes lat
   assert.equal(resized.json().artifact.source.url, resizedAddress);
 });
 
-test("a time the bot sends without a zone is saved only after the contributor confirms how it reads", async (t) => {
-  const { botUpload, staged, artifactCount } = await setup(t);
+test("a time the bot sends without a zone is read in the contributor's timezone without a confirmation", async (t) => {
+  const { botUpload } = await setup(t);
   const file = { name: "late.png", bytes: await imageBytes(t) };
   const fields = {
     description: "Late night",
@@ -441,19 +441,11 @@ test("a time the bot sends without a zone is saved only after the contributor co
     discordAttachmentId: ATTACHMENT_ID,
   };
 
-  for (const extra of [{}, { zoneConfirmed: "false" }] as Record<string, string>[]) {
-    const refused = await botUpload({ ...fields, ...extra }, file);
-    assert.equal(refused.statusCode, 400, refused.body);
-    assert.equal(refused.json().details.field, "exactDate");
-    assert.equal(refused.json().details.reason, "zone_unconfirmed");
-  }
-  assert.equal(await artifactCount(), 0);
-  assert.deepEqual(staged(), []);
-
-  const confirmed = await botUpload({ ...fields, zoneConfirmed: "true" }, file);
-  assert.equal(confirmed.statusCode, 201, confirmed.body);
+  // The owner dropped the confirmation on 2026-11-25. The bot may still send it, and it changes nothing.
+  const saved = await botUpload(fields, file);
+  assert.equal(saved.statusCode, 201, saved.body);
   // MEMBER has no timezone of their own, so the time is read in the archive's.
-  const exact = confirmed.json().artifact.dates.exact.date;
+  const exact = saved.json().artifact.dates.exact.date;
   assert.equal(exact.kind, "instant");
   assert.equal(exact.timezone, "America/Toronto");
   assert.equal(exact.instantMs, Date.UTC(2019, 6, 15, 22, 30));

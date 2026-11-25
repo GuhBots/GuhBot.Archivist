@@ -454,6 +454,164 @@ export function removeHistory(
   });
 }
 
+export interface UpdateHistoryInput {
+  archiveId: unknown;
+  kind: unknown;
+  parentId: unknown;
+  entryId: unknown;
+  /** The parent's version as the contributor saw it. */
+  expectedVersion: unknown;
+  /** A new name, for aliases and names. Undefined leaves it alone. */
+  name?: unknown;
+  /** A new discriminator for an account name. Undefined leaves it, and null or "" clears it. */
+  discriminator?: unknown;
+  /** New dates. Undefined leaves a date alone, and null or "" makes it unknown. */
+  date?: unknown;
+  start?: unknown;
+  end?: unknown;
+}
+
+/**
+ * Changes an entry's own name or dates, such as filling in an unknown date
+ * later. Its related record and image stay; remove the entry and add another
+ * to change those. The parent's version increases and its log records the
+ * old and new values.
+ */
+export function updateHistory(
+  context: ArchivistContext,
+  actor: Actor,
+  input: UpdateHistoryInput,
+): HistoryEntry {
+  const session = openForActor(context, actor, input.archiveId);
+  const { store } = session;
+  const db = store.db;
+  const kind = historyKindValue(input.kind);
+  const spec = SPECS[kind];
+  const parentTable = TABLES[spec.parent];
+  const parentId = resolveShortId(db, parentTable, input.parentId, spec.parent);
+  const expectedVersion = expectedVersionValue(input.expectedVersion);
+  const parent = db.prepare(`SELECT version FROM ${parentTable} WHERE id = ?`).get(parentId) as
+    { version: number } | undefined;
+  if (!parent) throw notFoundRecord(spec.parent);
+  const entryId = String(input.entryId ?? "");
+  const entry = listHistory(db, spec.parent, parentId).find(
+    (item) => item.kind === kind && item.id === entryId,
+  );
+  if (!entry || kind === "bot_owner") throw notFoundRecord("history entry");
+
+  const zone = inputTimeZone(context, actor, session.details.timezone);
+  const order = getDateOrder(context, actor);
+  const timezone = session.details.timezone;
+  const cleared = (value: unknown) => value === null || value === "";
+  const dateValue = (field: string, value: unknown): DateValue | null =>
+    cleared(value) ? null : parseDateInput(field, value, zone, order);
+
+  const named = kind === "alias" || kind.endsWith("_name");
+  const name =
+    named && input.name !== undefined ? requiredText("name", input.name, TEXT_LIMITS.name) : null;
+  let discriminator: string | null | undefined;
+  if (kind === "account_name" && input.discriminator !== undefined) {
+    discriminator = optionalText("discriminator", input.discriminator, 4);
+    if (discriminator !== null && !/^\d{1,4}$/.test(discriminator)) {
+      throw invalid("discriminator", "A discriminator is up to four digits, such as 1234.");
+    }
+  }
+  // Each date column the kind has, with its new value when one was given.
+  const dates: { column: string; field: "date" | "start" | "end"; value: DateValue | null }[] = [];
+  for (const field of ["date", "start", "end"] as const) {
+    const column = spec[field];
+    if (column && input[field] !== undefined) {
+      dates.push({ column, field, value: dateValue(field, input[field]) });
+    }
+  }
+  const startValue = dates.find((d) => d.field === "start");
+  const endValue = dates.find((d) => d.field === "end");
+  if (spec.start && spec.end) {
+    const row = db
+      .prepare(`SELECT ${spec.start} AS s, ${spec.end} AS e FROM ${spec.table} WHERE id = ?`)
+      .get(entryId) as { s: string | null; e: string | null };
+    const start = startValue ? startValue.value : readValue(db, row.s);
+    const end = endValue ? endValue.value : readValue(db, row.e);
+    if (start && end && isLater(start, end, timezone)) {
+      throw invalid("end", "The end comes before the start.");
+    }
+  }
+  const newDay = dates.find((d) => d.field === "date");
+  if (kind === "alias") {
+    const day = newDay
+      ? newDay.value
+        ? archiveDay(newDay.value, timezone)
+        : null
+      : (entry.date?.archiveDay ?? null);
+    const duplicate = db
+      .prepare(
+        "SELECT 1 FROM character_aliases a LEFT JOIN date_values d ON d.id = a.observed_date_id WHERE a.character_id = ? AND a.name = ? AND d.archive_day IS ? AND a.id <> ?",
+      )
+      .get(parentId, name ?? entry.name, day, entryId);
+    if (duplicate) throw invalid("name", "That alias is already recorded for this day.");
+  }
+
+  const before = describe(entry);
+  const after = {
+    ...before,
+    ...(name !== null ? { name } : {}),
+    ...(discriminator !== undefined ? { discriminator: discriminator ?? undefined } : {}),
+  } as Record<string, string | undefined>;
+  for (const { field, value } of dates) after[field] = value?.originalText;
+  const changed = Object.keys({ ...before, ...after }).some((key) => before[key] !== after[key]);
+  if (parent.version !== expectedVersion) {
+    throw staleVersion(spec.parent, parentId, parent.version, {});
+  }
+  if (!changed) return entry;
+
+  const now = timestamp(context.now());
+  commitMutation(store, {
+    expectations: [{ table: parentTable, id: parentId, version: parent.version + 1 }],
+    apply(target) {
+      const values: Record<string, unknown> = { id: entryId };
+      if (name !== null) values[kind === "account_name" ? "username" : "name"] = name;
+      if (discriminator !== undefined) values.discriminator = discriminator;
+      for (const { column, value } of dates) {
+        values[column] = value ? insertDate(target, value, timezone) : null;
+      }
+      const set = Object.keys(values)
+        .filter((column) => column !== "id")
+        .map((column) => `${column} = @${column}`);
+      if (set.length) {
+        target.prepare(`UPDATE ${spec.table} SET ${set.join(", ")} WHERE id = @id`).run(values);
+      }
+      bumpParent(target, parentTable, parentId, parent.version, now);
+      pruneDates(target);
+    },
+    append: [
+      logEntry(context, actor, spec.parent, parentId, {
+        [kind]: { old: compact(before), new: compact(after) },
+      }),
+    ],
+  });
+  return listHistory(db, spec.parent, parentId).find(
+    (item) => item.kind === kind && item.id === entryId,
+  )!;
+}
+
+/** A stored date as a value to compare, or null. */
+function readValue(db: Database.Database, dateId: string | null): DateValue | null {
+  return readDate(db, dateId);
+}
+
+/** An entry's values as its log lines name them. */
+function describe(entry: HistoryEntry): Record<string, string | undefined> {
+  return {
+    name: entry.name ?? undefined,
+    discriminator: entry.discriminator ?? undefined,
+    target: entry.targetId ? `${entry.targetName} (${entry.targetId})` : undefined,
+    media: entry.mediaId ?? undefined,
+    date: entry.date?.originalText,
+    start: entry.start?.originalText,
+    end: entry.end?.originalText,
+  };
+}
+
 function bumpParent(
   db: Database.Database,
   table: string,
@@ -568,29 +726,91 @@ export function mainAccountAt(
 }
 
 export type Picture =
-  | { source: "avatar"; accountId: string; mediaId: string }
+  | {
+      source: "avatar";
+      accountId: string;
+      mediaId: string;
+      /**
+       * True when the avatar is not known to be the one in use at the
+       * requested position: it is undated, from later, or from an account
+       * that is not the recorded main account then. Pages mark it, so a
+       * stand-in is never presented as verified history.
+       */
+      standIn: boolean;
+    }
   | { source: "fallback"; mediaId: string }
   | { source: "initials" };
 
+/** An account's latest avatar with no day: the latest dated one, then an undated one. */
+function latestAvatar(db: Database.Database, accountId: string): string | null {
+  return (
+    latest(db, "account_avatars", "account_id", accountId, "observed_date_id", undefined)
+      ?.media_id ?? null
+  );
+}
+
 /**
- * A character's picture on a day: their main account's avatar then, else
- * their fallback picture, else initials. A current image is never presented
- * as historical, so the source is always returned for labeling.
+ * A character's picture on a day, or their latest one without a day.
+ *
+ * 1. Their main account's avatar known for that day. Without a day, the
+ *    main account's latest avatar, dated or not.
+ * 2. Otherwise their fallback picture, which a contributor chose for when
+ *    no account picture is known.
+ * 3. Otherwise a stand-in avatar: the main account's latest known one, then
+ *    the latest known avatar of any account linked to them. The owner chose
+ *    on 2026-11-25 that a linked account's avatar beats initials.
+ * 4. Otherwise initials.
+ *
+ * The source and stand-in flag are always returned, so pages can label them.
  */
 export function characterPictureAt(
   db: Database.Database,
   characterId: string,
   day?: string,
 ): Picture {
-  const accountId = mainAccountAt(db, characterId, day);
-  if (accountId) {
-    const avatar = latest(db, "account_avatars", "account_id", accountId, "observed_date_id", day);
-    if (avatar?.media_id) return { source: "avatar", accountId, mediaId: avatar.media_id };
+  const mainThen = mainAccountAt(db, characterId, day);
+  if (mainThen) {
+    const avatar = latest(db, "account_avatars", "account_id", mainThen, "observed_date_id", day);
+    if (avatar?.media_id) {
+      return { source: "avatar", accountId: mainThen, mediaId: avatar.media_id, standIn: false };
+    }
   }
   const fallback = db
     .prepare("SELECT fallback_media_id AS id FROM characters WHERE id = ?")
     .get(characterId) as { id: string | null } | undefined;
-  return fallback?.id ? { source: "fallback", mediaId: fallback.id } : { source: "initials" };
+  if (fallback?.id) return { source: "fallback", mediaId: fallback.id };
+  // The main account then or, without one known for the day, the latest one recorded.
+  const main = mainThen ?? (day ? mainAccountAt(db, characterId) : null);
+  const mainAvatar = main ? latestAvatar(db, main) : null;
+  if (main && mainAvatar) {
+    return { source: "avatar", accountId: main, mediaId: mainAvatar, standIn: true };
+  }
+  const other = db
+    .prepare(
+      `SELECT v.account_id AS accountId, v.media_id AS mediaId
+       FROM account_avatars v JOIN accounts a ON a.id = v.account_id
+       LEFT JOIN date_values d ON d.id = v.observed_date_id
+       WHERE a.character_id = ?
+       ORDER BY d.archive_day IS NULL, d.archive_day DESC, coalesce(d.instant_ms, 0) DESC, v.id DESC
+       LIMIT 1`,
+    )
+    .get(characterId) as { accountId: string; mediaId: string } | undefined;
+  return other ? { source: "avatar", ...other, standIn: true } : { source: "initials" };
+}
+
+/**
+ * A server's icon on a day, or a stand-in when none is known for that day:
+ * its latest known icon. Null when it has no icon at all.
+ */
+export function serverIconOn(
+  db: Database.Database,
+  serverId: string,
+  day?: string,
+): { mediaId: string; standIn: boolean } | null {
+  const then = serverIconAt(db, serverId, day);
+  if (then) return { mediaId: then, standIn: false };
+  const known = day ? serverIconAt(db, serverId) : null;
+  return known ? { mediaId: known, standIn: true } : null;
 }
 
 /**

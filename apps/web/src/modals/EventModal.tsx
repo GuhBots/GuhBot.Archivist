@@ -5,7 +5,7 @@ import { DateField } from "../components/DateField.js";
 import { Thumb } from "../components/Media.js";
 import { type Picked, Picker, unfinishedError, unfinishedPicker } from "../components/Picker.js";
 import { PlacePicker, useLinkedPlaces } from "../components/PlacePicker.js";
-import { dayText } from "../format.js";
+import { byteText, dayText } from "../format.js";
 import { useWindows } from "../Shell.js";
 import { useArchive } from "../state.js";
 import { ErrorNote, Modal } from "../ui.js";
@@ -170,6 +170,7 @@ export function EventModal(props: { id: string }) {
                   key={item.id}
                   type="button"
                   aria-label={item.description}
+                  title={`${item.description} · ${byteText(item.media.byteLength)}`}
                   onClick={() => windows.openArtifact(item.id, { ids, index, title: event.title })}
                 >
                   <Thumb archiveId={archive.archiveId} media={item.media} />

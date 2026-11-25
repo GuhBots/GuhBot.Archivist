@@ -9,6 +9,8 @@ export interface Me {
   via: "session" | "service";
   sessionExpires: string | null;
   preferences: { timeZone: string | null; dateOrder: "ymd" | "mdy" | "dmy" };
+  /** Optional abilities, such as reading avatars from Discord by account ID. */
+  features: { discordLookups: boolean };
 }
 
 /** The shared filters. They apply in every view of one archive. */

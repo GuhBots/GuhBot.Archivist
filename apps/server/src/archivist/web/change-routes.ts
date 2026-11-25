@@ -22,7 +22,7 @@ import {
 import { entityView } from "../entity-views.js";
 import { ArchivistError } from "../errors.js";
 import { createEvent, deleteEvent, updateEvent } from "../events.js";
-import { addHistory, removeHistory } from "../history.js";
+import { addHistory, removeHistory, updateHistory } from "../history.js";
 import { mergeCharacters, previewMerge } from "../merge.js";
 import { getDateOrder, inputTimeZone } from "../preferences.js";
 import { openForActor } from "../records.js";
@@ -149,6 +149,25 @@ export function registerChangeRoutes(
         expectedVersion: expectedVersionOf(request),
       } as Parameters<typeof removeHistory>[2]);
       return entityView(context, actor, { archiveId, kind, id });
+    },
+  );
+
+  // Changes an entry's own name or dates, such as filling in an unknown date later.
+  scope.patch<{ Params: Params & { entryId: string } }>(
+    `${base}/entities/:kind/:id/history/:entryId`,
+    async (request) => {
+      const actor = await actorOf(request);
+      const kind = entityKind(request.params.kind);
+      const { archiveId, id, entryId } = request.params;
+      const body = bodyOf(request);
+      const entry = updateHistory(context, actor, {
+        ...body,
+        archiveId,
+        kind: body.historyKind,
+        parentId: id,
+        entryId,
+      } as Parameters<typeof updateHistory>[2]);
+      return { entry, record: entityView(context, actor, { archiveId, kind, id }) };
     },
   );
 

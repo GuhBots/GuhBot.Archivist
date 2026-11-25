@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, ApiError, type ArtifactDetails } from "../api.js";
+import { api, ApiError, type ArtifactDetails, mediaUrl } from "../api.js";
 import { CharacterChips } from "../components/CharacterChips.js";
 import { DateField } from "../components/DateField.js";
 import { FullMedia } from "../components/Media.js";
 import { type Picked, Picker, unfinishedError, unfinishedPicker } from "../components/Picker.js";
 import { PlacePicker, useLinkedPlaces } from "../components/PlacePicker.js";
-import { basisText, dayText, shortId } from "../format.js";
+import { basisText, byteText, dayText, shortId } from "../format.js";
 import { navigate, viewPath } from "../router.js";
 import { useWindows } from "../Shell.js";
 import { useArchive } from "../state.js";
@@ -19,20 +19,70 @@ interface Nav {
   title?: string;
 }
 
-/** An artifact's full details, with editing and deletion, and steps through an album when opened from one. */
+/** Preloads an artifact's picture, so stepping to it shows it at once. Video and audio load when played. */
+function preloadMedia(archiveId: string, artifact: Loaded): void {
+  const { media } = artifact;
+  if (!media.readable || !media.mimeType.startsWith("image/")) return;
+  const still = media.hasPreview && media.mimeType !== "image/gif";
+  new Image().src = mediaUrl(archiveId, media.id, still);
+}
+
+/**
+ * An artifact's full details, with editing and deletion, and steps through
+ * an album when opened from one. The window stays open while stepping: it
+ * shows each artifact as soon as it is loaded, keeps the ones it has seen,
+ * and loads the next and previous ones ahead of time.
+ */
 export function ArtifactModal(props: { id: string; nav?: Nav }) {
   const { archive, toast, changed, setPosition } = useArchive();
   const windows = useWindows();
-  const [artifact, setArtifact] = useState<Loaded | null>(null);
+  const cache = useRef(new Map<string, Loaded>());
+  const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [editing, setEditing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const base = `/api/archives/${archive.archiveId}/artifacts/${props.id}`;
+  // The artifact on screen now. A slow answer for one already stepped past is dropped.
+  const current = useRef(props.id);
+  current.current = props.id;
+  const artifact = loaded?.id === props.id ? loaded : (cache.current.get(props.id) ?? null);
 
+  const fetchArtifact = useCallback(
+    async (id: string) => {
+      const result = await api<Loaded>(`/api/archives/${archive.archiveId}/artifacts/${id}`);
+      cache.current.set(id, result);
+      return result;
+    },
+    [archive.archiveId],
+  );
   const load = useCallback(() => {
-    api<Loaded>(base).then(setArtifact).catch(setError);
-  }, [base]);
-  useEffect(load, [load]);
+    const id = props.id;
+    fetchArtifact(id)
+      .then((result) => current.current === id && setLoaded(result))
+      .catch((failure: unknown) => current.current === id && setError(failure));
+  }, [props.id, fetchArtifact]);
+
+  // Each artifact starts out of edit mode and is refreshed, even when it was already loaded.
+  useEffect(() => {
+    setEditing(false);
+    setConfirmDelete(false);
+    setError(null);
+    load();
+  }, [load]);
+
+  // The neighbors load in the background, pictures included.
+  useEffect(() => {
+    if (!props.nav) return;
+    for (const offset of [1, -1]) {
+      const id = props.nav.ids[props.nav.index + offset];
+      if (!id) continue;
+      const known = cache.current.get(id);
+      if (known) continue;
+      fetchArtifact(id)
+        .then((result) => preloadMedia(archive.archiveId, result))
+        .catch(() => undefined);
+    }
+  }, [props.nav, fetchArtifact, archive.archiveId]);
 
   const step = useCallback(
     (by: number) => {
@@ -57,10 +107,48 @@ export function ArtifactModal(props: { id: string; nav?: Nav }) {
     ? `${props.nav.title ? `${props.nav.title} · ` : ""}${props.nav.index + 1} of ${props.nav.ids.length}`
     : `Artifact ${shortId(props.id)}`;
 
+  const navButtons = props.nav ? (
+    <>
+      <button
+        className="btn"
+        type="button"
+        aria-label="Previous artifact"
+        disabled={props.nav.index === 0}
+        onClick={() => step(-1)}
+      >
+        ‹
+      </button>
+      <button
+        className="btn"
+        type="button"
+        aria-label="Next artifact"
+        disabled={props.nav.index === props.nav.ids.length - 1}
+        onClick={() => step(1)}
+      >
+        ›
+      </button>
+      <span className="grow" />
+    </>
+  ) : null;
+
   if (!artifact) {
+    // The same window, with placeholders where the artifact will be.
     return (
-      <Modal title={title} onClose={windows.close} onKey={onKey}>
-        <div className="content">{error ? <ErrorNote error={error} /> : "Loading…"}</div>
+      <Modal title={title} wide onClose={windows.close} onKey={onKey} footer={navButtons}>
+        <div className="content">
+          {error ? (
+            <ErrorNote error={error} />
+          ) : (
+            <div className="detail" aria-busy="true" aria-label="Loading the artifact">
+              <div className="media-box skeleton" />
+              <div style={{ display: "grid", gap: 10, alignContent: "start" }}>
+                <span className="skeleton line" />
+                <span className="skeleton line short" />
+                <span className="skeleton block" />
+              </div>
+            </div>
+          )}
+        </div>
       </Modal>
     );
   }
@@ -74,7 +162,9 @@ export function ArtifactModal(props: { id: string; nav?: Nav }) {
         method: "PATCH",
         json: { ...patch, expectedVersion: artifact.version },
       });
-      setArtifact({ ...artifact, ...updated, names: { ...artifact.names } });
+      const next = { ...artifact, ...updated, names: { ...artifact.names } };
+      cache.current.set(artifact.id, next);
+      setLoaded(next);
       changed();
       load();
       return true;
@@ -153,29 +243,7 @@ export function ArtifactModal(props: { id: string; nav?: Nav }) {
           </>
         ) : (
           <>
-            {props.nav ? (
-              <>
-                <button
-                  className="btn"
-                  type="button"
-                  aria-label="Previous artifact"
-                  disabled={props.nav.index === 0}
-                  onClick={() => step(-1)}
-                >
-                  ‹
-                </button>
-                <button
-                  className="btn"
-                  type="button"
-                  aria-label="Next artifact"
-                  disabled={props.nav.index === props.nav.ids.length - 1}
-                  onClick={() => step(1)}
-                >
-                  ›
-                </button>
-                <span className="grow" />
-              </>
-            ) : null}
+            {navButtons}
             <button className="btn danger" type="button" onClick={() => setConfirmDelete(true)}>
               Delete
             </button>
@@ -272,7 +340,7 @@ export function ArtifactModal(props: { id: string; nav?: Nav }) {
                 </dd>
                 <dt>File</dt>
                 <dd>
-                  {artifact.media.originalFilename}
+                  {artifact.media.originalFilename} · {byteText(artifact.media.byteLength)}
                   {artifact.media.readable ? "" : ", cannot be read (kept as uploaded)"}
                 </dd>
                 <dt>Source</dt>
@@ -323,7 +391,11 @@ export function ArtifactModal(props: { id: string; nav?: Nav }) {
                       {selected?.basis === "file" ? <span className="inuse">in use</span> : null}
                     </td>
                     <td>{artifact.dates.file ? dayText(artifact.dates.file.archiveDay) : "—"}</td>
-                    <td>{artifact.dates.file ? "Embedded in the file, not verified" : ""}</td>
+                    <td>
+                      {artifact.dates.file
+                        ? FILE_DATE_SOURCES[artifact.media.fileDateSource ?? "embedded"]
+                        : ""}
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -340,6 +412,13 @@ export function ArtifactModal(props: { id: string; nav?: Nav }) {
     </Modal>
   );
 }
+
+/** How each kind of file date was found, all below a contributor's exact or estimated date. */
+const FILE_DATE_SOURCES: Record<"embedded" | "filename" | "modified", string> = {
+  embedded: "Embedded in the file, not verified",
+  filename: "From the file's name, not verified",
+  modified: "When the uploader's computer last changed the file, not verified",
+};
 
 /** The edit form's ID, so the window's footer can hold its Save button. */
 const EDIT_FORM = "edit-artifact";

@@ -47,7 +47,6 @@ export function AddArtifactModal(props: { characters?: Picked[]; places?: Picked
   const [drive, setDrive] = useState("");
   const [description, setDescription] = useState("");
   const [exact, setExact] = useState("");
-  const [confirmed, setConfirmed] = useState(false);
   const [estimate, setEstimate] = useState("");
   const [reason, setReason] = useState("");
   const [characters, setCharacters] = useState<Picked[]>(props.characters ?? []);
@@ -71,7 +70,6 @@ export function AddArtifactModal(props: { characters?: Picked[]; places?: Picked
     const form = new FormData();
     form.append("description", description);
     if (exact.trim()) form.append("exactDate", exact);
-    if (confirmed) form.append("zoneConfirmed", "true");
     if (estimate.trim()) {
       form.append("estimatedDay", estimate);
       form.append("estimateReason", reason);
@@ -81,6 +79,8 @@ export function AddArtifactModal(props: { characters?: Picked[]; places?: Picked
     for (const place of places)
       form.append(place.kind === "server" ? "servers" : "channels", place.id);
     if (drive.trim()) form.append("driveLink", drive.trim());
+    // When this computer last changed the file, the date of last resort for a file with none inside.
+    if (file && file.lastModified) form.append("fileModified", String(file.lastModified));
     if (file) form.append("file", file, file.name);
     try {
       const result = await api<Result>(`/api/archives/${archive.archiveId}/artifacts/intake`, {
@@ -238,8 +238,6 @@ export function AddArtifactModal(props: { characters?: Picked[]; places?: Picked
             label="Exact date (optional)"
             value={exact}
             onChange={setExact}
-            confirmed={confirmed}
-            onConfirm={setConfirmed}
             placeholder="Jul 15 2019 6:30pm"
           />
           <DateField
@@ -257,7 +255,9 @@ export function AddArtifactModal(props: { characters?: Picked[]; places?: Picked
           </label>
         ) : null}
         <p className="hint" style={{ margin: 0 }}>
-          With no date typed, the file's own date is used when it has one.
+          With no date typed, the file's own date is used: one stored inside it, else one in its
+          name, else when your computer last changed it. A time without a zone is read in your
+          timezone.
         </p>
         <ErrorNote error={error} />
       </div>

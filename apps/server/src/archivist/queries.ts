@@ -304,6 +304,8 @@ export interface ArtifactSummary {
     filename: string;
     hasPreview: boolean;
     readable: boolean;
+    /** The original file's size. */
+    byteLength: number;
   };
   characterIds: string[];
   eventIds: string[];
@@ -349,6 +351,7 @@ export function summarizeArtifact(
       filename: details.media.originalFilename,
       hasPreview: details.media.hasPreview,
       readable: details.media.readable,
+      byteLength: details.media.byteLength,
     },
     characterIds: details.links.characters,
     eventIds: details.links.events,
@@ -365,6 +368,8 @@ export interface ArtifactPage {
   next: string | null;
   /** How many artifacts match the filters in all. */
   total: number;
+  /** The combined size of their original files. */
+  totalBytes: number;
 }
 
 export function listArtifacts(
@@ -386,8 +391,9 @@ export function listArtifacts(
   const { sql: where, params } = artifactWhere(input.filters);
   const from =
     "FROM artifacts a JOIN media m ON m.id = a.media_id LEFT JOIN date_values d ON d.id = a.selected_date_id";
-  const total = (db.prepare(`SELECT count(*) AS n ${from} ${where}`).get(params) as { n: number })
-    .n;
+  const { n: total, bytes: totalBytes } = db
+    .prepare(`SELECT count(*) AS n, coalesce(sum(m.byte_length), 0) AS bytes ${from} ${where}`)
+    .get(params) as { n: number; bytes: number };
   const cursor = decodeCursor(input.cursor, keys.length);
   const pageParams = { ...params, limit: limit + 1 };
   const conditions = [where.replace(/^WHERE /, "")].filter(Boolean);
@@ -406,6 +412,7 @@ export function listArtifacts(
     items: page.map((row) => summarizeArtifact(db, readArtifact(db, row.id as string)!)),
     next: rows.length > limit && last ? encodeCursor(keys.map((_, i) => last[`k${i}`]!)) : null,
     total,
+    totalBytes,
   };
 }
 

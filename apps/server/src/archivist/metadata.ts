@@ -81,6 +81,12 @@ interface DateField {
   time?: string;
   /** Use the field only when it carries its own offset. */
   requireOffset?: boolean;
+  /**
+   * The field is free text that programs fill in their own way, so written
+   * dates such as `Mon 15 Jul 2019 06:30:12 PM EDT` are read too. PNG's
+   * Creation Time is one: GNOME writes it in the computer's locale.
+   */
+  textual?: boolean;
 }
 
 interface FieldTiers {
@@ -106,7 +112,7 @@ const STILL_IMAGE_FIELDS: FieldTiers = {
       offset: "ExifIFD:OffsetTimeDigitized",
     },
     { tag: "XMP-xmp:CreateDate" },
-    { tag: "PNG:CreationTime" },
+    { tag: "PNG:CreationTime", textual: true },
   ],
 };
 
@@ -171,7 +177,11 @@ export interface FileDate {
    * guessing between disagreeing or damaged tags could invent history.
    */
   status: "found" | "absent" | "conflict" | "malformed";
-  tier: "capture" | "creation" | null;
+  /**
+   * Where the date came from: embedded capture or creation tags, the file's
+   * name, or the modified time the uploader's computer reported.
+   */
+  tier: "capture" | "creation" | "filename" | "modified" | null;
   sourceTag: string | null;
   value: DateValue | null;
   candidates: FileDateCandidate[];
@@ -216,7 +226,11 @@ type FieldReading =
 function readField(tags: RawTags, field: DateField): FieldReading {
   const raw = text(tags[field.tag]);
   if (raw === undefined || PLACEHOLDER.test(raw)) return { kind: "absent" };
-  const match = RAW_DATE.exec(raw);
+  let match = RAW_DATE.exec(raw);
+  if (!match && field.textual) {
+    const normalized = normalizeWrittenDate(raw);
+    match = normalized ? RAW_DATE.exec(normalized) : null;
+  }
   if (!match) return { kind: "malformed", raw };
 
   const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
@@ -291,6 +305,162 @@ function readField(tags: RawTags, field: DateField): FieldReading {
     raw: original,
     value: { kind: "instant", originalText: original, instantMs, timezone: offsetLabel(minutes) },
   };
+}
+
+const MONTH_NAMES = [
+  "january",
+  "february",
+  "march",
+  "april",
+  "may",
+  "june",
+  "july",
+  "august",
+  "september",
+  "october",
+  "november",
+  "december",
+];
+
+/**
+ * A date written out in words, as in RFC 1123 (`Mon, 15 Jul 2019 18:30:12
+ * +0000`), C's `%c` in English locales (`Mon 15 Jul 2019 06:30:12 PM EDT`,
+ * `Mon Jul 15 18:30:12 2019`), or ISO 8601, as ExifTool's
+ * `YYYY:MM:DD HH:MM:SS` with any offset. Only numeric offsets, UTC, and GMT
+ * count as zones. Abbreviations such as EDT mean different offsets in
+ * different places, so a time with one keeps its wall clock and an unknown
+ * zone. Null when the text is not such a date.
+ */
+export function normalizeWrittenDate(raw: string): string | null {
+  const iso =
+    /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?))?\s*(Z|[+-]\d{2}:?\d{2})?$/.exec(
+      raw,
+    );
+  if (iso) return `${iso[1]}:${iso[2]}:${iso[3]}${iso[4] ? ` ${iso[4]}` : ""}${iso[5] ?? ""}`;
+  let year: number | undefined;
+  let month: number | undefined;
+  let day: number | undefined;
+  let time: [number, number, number] | undefined;
+  let meridiem: "am" | "pm" | undefined;
+  let zone: string | undefined;
+  for (const word of raw.replace(/,/g, " ").split(/\s+/).filter(Boolean)) {
+    const lower = word.toLowerCase().replace(/\.$/, "");
+    const clock = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(word);
+    const monthIndex = MONTH_NAMES.findIndex((name) => lower.length >= 3 && name.startsWith(lower));
+    if (monthIndex >= 0 && month === undefined) month = monthIndex + 1;
+    else if (/^\d{4}$/.test(word) && year === undefined) year = Number(word);
+    else if (/^\d{1,2}$/.test(word) && day === undefined) day = Number(word);
+    else if (clock && time === undefined) {
+      time = [Number(clock[1]), Number(clock[2]), Number(clock[3] ?? 0)];
+    } else if (lower === "am" || lower === "pm") meridiem = lower;
+    else if (/^(z|utc|gmt)$/.test(lower)) zone = "Z";
+    else if (/^(?:utc|gmt)?[+-]\d{2}:?\d{2}$/.test(lower)) zone = lower.replace(/^(utc|gmt)/, "");
+    // Weekdays and zone abbreviations carry nothing to keep. Any other word,
+    // such as a month in another language, means this is not a date to read.
+    else if (!/^[a-z]{2,9}$/.test(lower)) return null;
+  }
+  if (year === undefined || month === undefined || day === undefined) return null;
+  if (!time && (meridiem || zone)) return null;
+  if (time && meridiem) {
+    if (time[0] < 1 || time[0] > 12) return null;
+    time[0] = (time[0] % 12) + (meridiem === "pm" ? 12 : 0);
+  }
+  const date = `${pad(year, 4)}:${pad(month)}:${pad(day)}`;
+  if (!time) return date;
+  return `${date} ${time.map((part) => pad(part)).join(":")}${zone ?? ""}`;
+}
+
+/**
+ * A date in a file's name, as cameras, phones, and screenshot tools write
+ * them: `IMG_20190715_183012.jpg`, `Screenshot from 2019-07-15 18-30-12.png`,
+ * `Screenshot 2019-07-15 at 18.30.12.png`, or `PXL_20190715_183012345.jpg`.
+ * The time is the camera's wall clock, so its zone stays unknown. Null when
+ * the name holds no real date from 1990 on.
+ */
+export function dateFromFilename(filename: string): FileDateCandidate | null {
+  const name = filename.replace(/\.[a-z0-9]{1,5}$/i, "");
+  const patterns = [
+    // Separated: 2019-07-15, 2019_07_15, or 2019.07.15, with an optional time after it.
+    /(?<!\d)((?:19|20)\d{2})([-_.])(\d{2})\2(\d{2})(?:(?:[ _T-]|\s+at\s+)(\d{2})[-_.:]?(\d{2})[-_.:]?(\d{2}))?(?!\d)/i,
+    // Compact: 20190715 with an optional 183012 after it, which may carry milliseconds.
+    /(?<!\d)((?:19|20)\d{2})()(\d{2})(\d{2})(?:[ _T-]?(\d{2})(\d{2})(\d{2})\d{0,3})?(?!\d)/,
+  ];
+  for (const pattern of patterns) {
+    const match = pattern.exec(name);
+    if (!match) continue;
+    const [year, month, day] = [Number(match[1]), Number(match[3]), Number(match[4])];
+    const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    if (year < 1990 || month < 1 || month > 12 || day < 1 || day > lastDay) continue;
+    const calendarDay = `${pad(year, 4)}-${pad(month)}-${pad(day)}`;
+    const raw = match[0];
+    if (match[5] === undefined) {
+      return { tag: "File:Name", raw, value: { kind: "day", originalText: raw, calendarDay } };
+    }
+    const [hour, minute, second] = [Number(match[5]), Number(match[6]), Number(match[7])];
+    if (hour > 23 || minute > 59 || second > 59) {
+      return { tag: "File:Name", raw, value: { kind: "day", originalText: raw, calendarDay } };
+    }
+    return {
+      tag: "File:Name",
+      raw,
+      value: {
+        kind: "unknown_local",
+        originalText: raw,
+        calendarDay,
+        localDateTime: `${calendarDay}T${pad(hour)}:${pad(minute)}:${pad(second)}`,
+      },
+    };
+  }
+  return null;
+}
+
+/** The pseudo-tag for a file's modified time as the uploader's browser reported it. */
+export const MODIFIED_TAG = "Upload:FileModifyDate";
+
+/**
+ * Fills in a file date for a file with no embedded one. The owner chose on
+ * 2026-11-25 that every uploaded file should get a date: first one in the
+ * file's name, then, for website uploads, when the uploader's computer last
+ * changed the file. Both are labeled by source and stay below exact and
+ * estimated dates. Damaged or disagreeing embedded dates still wait for a
+ * contributor, because the file's own date may be the right one.
+ */
+export function withFallbackDate(
+  found: FileDate,
+  input: { filename: string; modifiedMs: number | null; modifiedZone: string },
+): FileDate {
+  if (found.status !== "absent") return found;
+  const named = dateFromFilename(input.filename);
+  if (named) {
+    return {
+      status: "found",
+      tier: "filename",
+      sourceTag: named.tag,
+      value: named.value,
+      candidates: [named],
+    };
+  }
+  if (input.modifiedMs !== null) {
+    const raw = new Date(input.modifiedMs).toISOString();
+    const candidate: FileDateCandidate = {
+      tag: MODIFIED_TAG,
+      raw,
+      value: {
+        kind: "instant",
+        originalText: raw,
+        instantMs: input.modifiedMs,
+        timezone: input.modifiedZone,
+      },
+    };
+    return {
+      status: "found",
+      tier: "modified",
+      sourceTag: MODIFIED_TAG,
+      value: candidate.value,
+      candidates: [candidate],
+    };
+  }
+  return found;
 }
 
 /** Wall-clock text of a value, to compare fields that may or may not carry an offset. */

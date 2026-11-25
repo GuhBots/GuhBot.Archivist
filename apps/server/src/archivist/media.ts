@@ -19,6 +19,7 @@ import { syncDirectory } from "./edit-log.js";
 import { ArchivistError } from "./errors.js";
 import {
   extractFileDate,
+  withFallbackDate,
   type FileDate,
   type MediaFormat,
   type RawTags,
@@ -212,7 +213,14 @@ function cleanFilename(name: unknown, extension: string): string {
  */
 export async function stageMedia(
   context: ArchivistContext,
-  input: { file: string; originalFilename: unknown },
+  input: {
+    file: string;
+    originalFilename: unknown;
+    /** When the uploader's computer last changed the file, for website uploads only. */
+    fileModifiedMs?: number | null;
+    /** The zone to show that time in: the uploader's own, or the archive's. */
+    modifiedZone?: string;
+  },
 ): Promise<StagedMedia> {
   const folder = dirname(input.file);
   const stagingRoot = join(context.paths.tmpDir, "staging");
@@ -241,7 +249,12 @@ export async function stageMedia(
   const { mimeType, extension } = MEDIA_TYPES[format];
   const sha256 = await hashFile(input.file);
   const metadata = await readRawMetadata(input.file);
-  const fileDate = extractFileDate(format, metadata.tags);
+  const originalFilename = cleanFilename(input.originalFilename, extension);
+  const fileDate = withFallbackDate(extractFileDate(format, metadata.tags), {
+    filename: originalFilename,
+    modifiedMs: input.fileModifiedMs ?? null,
+    modifiedZone: input.modifiedZone ?? "UTC",
+  });
 
   let previewFile: string | null = null;
   let readable = metadata.errors.length === 0;
@@ -270,7 +283,7 @@ export async function stageMedia(
     folder,
     originalFile: input.file,
     previewFile,
-    originalFilename: cleanFilename(input.originalFilename, extension),
+    originalFilename,
     format,
     mimeType,
     extension,

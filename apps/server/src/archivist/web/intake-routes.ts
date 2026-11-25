@@ -20,7 +20,6 @@ import {
   type IntakeInput,
 } from "../artifacts.js";
 import type { Actor, ArchivistContext } from "../context.js";
-import { needsZoneConfirmation } from "../dates.js";
 import { isDiscordCdn } from "../download.js";
 import { DriveClient, parseDriveLink } from "../drive.js";
 import { ArchivistError } from "../errors.js";
@@ -33,10 +32,11 @@ import {
   type StagedMedia,
   stageMedia,
 } from "../media.js";
-import { getDateOrder } from "../preferences.js";
+import { inputTimeZone } from "../preferences.js";
 import { openForActor } from "../records.js";
 import type { Auth, Via } from "./auth.js";
 import type { Fetch } from "./discord-oauth.js";
+import { refreshDiscordAvatar } from "./discord-profiles.js";
 import { ReviewStore } from "./reviews.js";
 
 /**
@@ -59,6 +59,8 @@ export interface IntakeOptions {
    * checks it before calling.
    */
   checkAnnouncementChannel?(userId: string, channelId: string): Promise<{ guildId: string }>;
+  /** A Discord bot token, to read accounts' avatars by Discord ID. Without it, lookups are refused. */
+  discordBotToken?: string;
   driveApiKey?: string;
   fetch: Fetch;
   logError(message: string, error: unknown): void;
@@ -161,26 +163,16 @@ function checkBotFields(fields: Fields, via: Via): void {
   }
 }
 
-/** A time typed without a zone is saved only once the contributor has seen how it reads. */
-function checkZone(
-  context: ArchivistContext,
-  actor: Actor,
-  intake: IntakeInput,
-  fields: Fields,
-): void {
-  const typed = intake.exactDate;
-  const confirmed = fields.zoneConfirmed === true || text(fields, "zoneConfirmed") === "true";
-  if (
-    typeof typed === "string" &&
-    !confirmed &&
-    needsZoneConfirmation(typed, getDateOrder(context, actor))
-  ) {
-    throw new ArchivistError(
-      "invalid_input",
-      "That time has no timezone. Check how it will be read, then confirm it, or add a zone after the time.",
-      { field: "exactDate", reason: "zone_unconfirmed" },
-    );
-  }
+/**
+ * When the contributor's own computer last changed an uploaded file, as the
+ * browser reports it. Only website uploads send it. Null when it is missing
+ * or not a plausible time.
+ */
+function fileModifiedMs(fields: Fields, via: Via): number | null {
+  if (via !== "session") return null;
+  const value = Number(text(fields, "fileModified"));
+  // Before 1990 is a reset clock or a missing value, not a real modification time.
+  return Number.isSafeInteger(value) && value >= Date.UTC(1990, 0, 1) ? value : null;
 }
 
 export function registerIntakeRoutes(scope: FastifyInstance, options: IntakeOptions): void {
@@ -212,7 +204,7 @@ export function registerIntakeRoutes(scope: FastifyInstance, options: IntakeOpti
     const { actor, via } = await auth.requireActor(request);
     const { archiveId } = request.params;
     // Access is checked before anything is read from the upload.
-    const { store } = openForActor(context, actor, archiveId);
+    const { store, details } = openForActor(context, actor, archiveId);
     const fields: Fields = {};
     let staging: string | null = null;
     let upload: { path: string; filename: string; intake: IntakeInput } | null = null;
@@ -240,7 +232,6 @@ export function registerIntakeRoutes(scope: FastifyInstance, options: IntakeOpti
             checkBotFields(fields, via);
             intake = intakeFrom(archiveId, fields, uploadSource(fields, randomUUID()));
             checkIntake(context, actor, intake);
-            checkZone(context, actor, intake, fields);
           } catch (error) {
             part.file.resume();
             throw error;
@@ -299,7 +290,6 @@ export function registerIntakeRoutes(scope: FastifyInstance, options: IntakeOpti
           resourceKey: link.resourceKey,
         });
         checkIntake(context, actor, intake);
-        checkZone(context, actor, intake, fields);
         const existing = findArtifactBySource(store.db, "drive", link.fileId);
         if (existing) return reply.send(duplicateReply(actor, archiveId, intake, existing));
         staging = createStagingFolder(context);
@@ -310,7 +300,13 @@ export function registerIntakeRoutes(scope: FastifyInstance, options: IntakeOpti
       } else {
         ({ intake, path: file, filename } = upload!);
       }
-      const media = await stageMedia(context, { file, originalFilename: filename });
+      const media = await stageMedia(context, {
+        file,
+        originalFilename: filename,
+        // A Drive file's modified time is Drive's, not the uploader's computer's.
+        fileModifiedMs: driveLink ? null : fileModifiedMs(fields, via),
+        modifiedZone: inputTimeZone(context, actor, details.timezone),
+      });
       const result = createArtifact(context, actor, { ...intake, media });
       if (result.status === "duplicate") {
         return reply.send(duplicateReply(actor, archiveId, intake, result.artifact));
@@ -439,6 +435,24 @@ export function registerIntakeRoutes(scope: FastifyInstance, options: IntakeOpti
       } finally {
         if (staging) discardStaging(context, staging);
       }
+    },
+  );
+
+  // Records an account's current Discord avatar, read by its Discord ID.
+  scope.post<{ Params: Params & { id: string } }>(
+    `${base}/entities/account/:id/discord-avatar`,
+    async (request) => {
+      const { actor } = await auth.requireActor(request);
+      const { archiveId, id } = request.params;
+      const body = (request.body ?? {}) as Fields;
+      const result = await refreshDiscordAvatar(context, actor, {
+        archiveId,
+        accountId: id,
+        expectedVersion: body.expectedVersion,
+        token: options.discordBotToken,
+        fetch: options.fetch,
+      });
+      return { ...result, record: entityView(context, actor, { archiveId, kind: "account", id }) };
     },
   );
 

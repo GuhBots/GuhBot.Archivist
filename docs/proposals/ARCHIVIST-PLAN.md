@@ -1233,4 +1233,13 @@ The earlier `Q01` through `Q19` topic discussion is resolved into the contract s
 * Supply representative public image, video, and audio files for the remaining Drive rehearsal, and optionally a Drive API key.
 * Verify the service container, clean restore, and joint bot deployment. Run the relevant Compose rehearsal with the explicitly configured test bot when those implementation changes are ready.
 
-**Current state (2026-11-24):** `S1` to `S5` are done. The service runs on its own with admission, owner IDs, the bot credential, the announcement queue, and its container, and the bot's Archivist commands call it, with `/archive` and `/a` in place of `/archivist`. The in-bot website and archive code are removed. The owner ran the two services as separate containers and confirmed that they work together. There was no real data to move, so the cutover copied nothing, and this plan moved here. In `S6`, all six views are built, including the graph, board, and character page, and the import and the running service have automated tests. Browser flows run locally, not in CI, and no capacity measurement is required, by owner decision. Still open: the live Drive rehearsal with representative public files.
+**Current state (2026-11-24):** `S1` to `S5` are done. The service runs on its own with admission, owner IDs, the bot credential, the announcement queue, and its container, and the bot's Archivist commands call it, with `/archive` and `/a` in place of `/archivist`. The in-bot website and archive code are removed. The owner ran the two services as separate containers and confirmed that they work together. There was no real data to move, so the cutover copied nothing, and this plan moved here. In `S6`, all six views are built, including the graph, board, and character page, and the import and the running service have automated tests. Browser flows run locally, not in CI, and no capacity measurement is required, by owner decision. On 2026-11-24 a local browser run of the `M4` checks passed against the sample archive, with no bot running:
+
+* All six views load, and a member adds records.
+* A timeline lane is labeled with the server name in effect at the visible date.
+* The add menu, a form, Escape, and album arrows work from the keyboard, and focus returns afterwards.
+* Every visible control has an accessible name.
+* Every add form fits a 390-pixel-wide screen with Save in view.
+* Removing a member from the whitelist shows them "No access yet" on their next click.
+
+That run found and fixed three faults: a lost session left the page open with an empty view, focus was lost after a window opened from the add menu closed, and album arrows did nothing while the next artifact loaded. Still open: the live Drive rehearsal with representative public files.

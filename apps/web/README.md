@@ -33,7 +33,9 @@ npm run build && npm run build:tests --workspace apps/server
 node apps/server/.test-build/tests/archivist/e2e/serve.js 3100 /archivist
 ```
 
-Set the printed `member` or `owner` value as the `archivist_session` cookie for `127.0.0.1`, then open the printed address.
+Set the printed `member` or `owner` value as the `archivist_session` cookie for `127.0.0.1`, then open the printed address. The owner's administration routes are mounted too, so the owner's cookie can remove the member from the whitelist with `DELETE /api/archives/<archive>/members/200000000000000002`. The member's next click then shows "No access yet".
+
+Any request that the service answers with an ended session or lost access makes the whole app show its sign-in or "No access yet" screen, wherever the viewer was. `src/api.ts` sends the `archivist:access-ended` window event, and `src/App.tsx` listens for it.
 
 ## Per-Viewer Settings
 

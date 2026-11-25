@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, ApiError, type ArchiveDetails, signInUrl } from "./api.js";
+import { ACCESS_ENDED, api, ApiError, type ArchiveDetails, signInUrl } from "./api.js";
 import { todayDay } from "./format.js";
 import { navigate, parseRoute, usePath, viewPath } from "./router.js";
 import { Shell } from "./Shell.js";
@@ -31,6 +31,14 @@ export function App() {
         else if (notAdmitted(error)) setMe("not-admitted");
         else setFailure(error instanceof Error ? error.message : String(error));
       });
+  }, []);
+
+  // Removing someone from their last whitelist ends their session on its next request.
+  useEffect(() => {
+    const ended = (event: Event) =>
+      setMe((event as CustomEvent<"signed-out" | "not-admitted">).detail);
+    window.addEventListener(ACCESS_ENDED, ended);
+    return () => window.removeEventListener(ACCESS_ENDED, ended);
   }, []);
 
   useEffect(() => {

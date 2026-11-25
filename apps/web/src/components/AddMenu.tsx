@@ -17,6 +17,7 @@ export function AddMenu(props: { characters?: Picked[]; places?: PickedPlace[] }
   // Fixed coordinates, because the tray scrolls sideways and would clip a menu inside it.
   const [open, setOpen] = useState<{ left: number; bottom: number } | null>(null);
   const box = useRef<HTMLDivElement>(null);
+  const button = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (!open) return;
     const away = (event: MouseEvent) => {
@@ -47,6 +48,7 @@ export function AddMenu(props: { characters?: Picked[]; places?: PickedPlace[] }
   return (
     <div ref={box} className="add-menu">
       <button
+        ref={button}
         className="add-btn"
         type="button"
         aria-label="Add"
@@ -90,6 +92,8 @@ export function AddMenu(props: { characters?: Picked[]; places?: PickedPlace[] }
               role="menuitem"
               onClick={() => {
                 setOpen(null);
+                // The window returns focus to whatever had it, and this menu item is about to go.
+                button.current?.focus();
                 action();
               }}
             >

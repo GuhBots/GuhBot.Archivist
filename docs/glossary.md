@@ -18,6 +18,7 @@ Add or update definitions when terminology changes, and link to them from other 
 | CI | Continuous integration |
 | CLI | Command-line interface |
 | CRLF | Carriage return and line feed, the line ending used by Windows |
+| DNS | Domain Name System, which turns a name such as `guhbot.example.com` into the address of a server |
 | ES | ECMAScript, the standard that JavaScript follows. ES modules use `import` and `export` |
 | FLAC | Free Lossless Audio Codec, an audio file format |
 | GHCR | GitHub Container Registry, where this repository publishes its images |

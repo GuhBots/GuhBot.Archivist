@@ -1,0 +1,11 @@
+# Updates the Archivist and bot stacks once. guhbot-update.timer starts it.
+# A systemd user unit: copy it to ~/.config/systemd/user/ on the server, as
+# docs/guides/self-hosting.md describes. %h is the user's home folder.
+
+[Unit]
+Description=Update the GuhBot Docker stacks to their newest images
+
+[Service]
+Type=oneshot
+# Archivist first, so the bot's commands find the newest service.
+ExecStart=%h/services/update-stacks.sh %h/services/archivist %h/services/guhbot

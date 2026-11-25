@@ -4,8 +4,8 @@
 #   Update:  docker compose up -d --pull always
 #   Stop:    docker compose down
 #
-# With the optional Cloudflare Tunnel, add --profile tunnel to every command,
-# such as docker compose --profile tunnel up -d.
+# For the optional Cloudflare Tunnel, set COMPOSE_PROFILES=tunnel in .env, so
+# every command above includes it. Or add --profile tunnel to every command.
 #
 # Servers need only this file and a .env file. In a clone of the repository,
 # compose.override.yaml adds a local build: docker compose up -d --build
@@ -59,7 +59,7 @@ services:
   # without forwarding a port on your router. In Cloudflare's dashboard, give
   # the tunnel a public hostname (with an optional path such as /archivist)
   # whose service is http://app:3000, and set ARCHIVIST_BASE_URL to that
-  # public https address. Started only with --profile tunnel.
+  # public https address. Started only with the tunnel profile.
   tunnel:
     image: cloudflare/cloudflared:2026.10.7
     profiles: ["tunnel"]

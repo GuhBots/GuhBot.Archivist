@@ -1,0 +1,13 @@
+# Checks for new GuhBot images every five minutes. A systemd user unit: copy
+# it to ~/.config/systemd/user/ with guhbot-update.service.
+
+[Unit]
+Description=Check for new GuhBot images every five minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+RandomizedDelaySec=30s
+
+[Install]
+WantedBy=timers.target

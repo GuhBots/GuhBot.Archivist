@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { api, type ArtifactDetails } from "../api.js";
 import { DateField } from "../components/DateField.js";
-import { type Picked, Picker } from "../components/Picker.js";
+import { FileDrop, MEDIA_ACCEPT } from "../components/FileDrop.js";
+import { type Picked, Picker, unfinishedError, unfinishedPicker } from "../components/Picker.js";
 import { type PickedPlace, PlacePicker } from "../components/PlacePicker.js";
 import { shortId } from "../format.js";
 import { useWindows } from "../Shell.js";
@@ -56,8 +57,14 @@ export function AddArtifactModal(props: { characters?: Picked[]; places?: Picked
   const [error, setError] = useState<unknown>(null);
   const [review, setReview] = useState<Extract<Result, { status: "duplicate" }> | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
+  const body = useRef<HTMLDivElement>(null);
 
   const submit = async () => {
+    const left = unfinishedPicker(body.current);
+    if (left) {
+      setError(unfinishedError(left));
+      return;
+    }
     setBusy(true);
     setError(null);
     // Fields go before the file, so the server checks them before keeping any of it.
@@ -182,16 +189,14 @@ export function AddArtifactModal(props: { characters?: Picked[]; places?: Picked
         </>
       }
     >
-      <div className="content">
+      <div ref={body} className="content">
         <div className="grid2">
-          <label className="field">
-            <span>A file (image, video, or audio, up to 100 MiB)</span>
-            <input
-              type="file"
-              accept="image/*,video/*,audio/*"
-              onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-            />
-          </label>
+          <FileDrop
+            label="A file: image, video, or audio such as a voice message, up to 100 MiB"
+            accept={MEDIA_ACCEPT}
+            file={file}
+            onFile={setFile}
+          />
           <label className="field">
             <span>Or a public Google Drive file link</span>
             <input

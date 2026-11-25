@@ -2,8 +2,10 @@ import { useEffect, useState } from "react";
 import { api, query } from "../api.js";
 import { useSettled } from "../Shell.js";
 import { useArchive } from "../state.js";
+import { Avatar } from "../ui.js";
 import { DateField } from "./DateField.js";
 import { createEvent, createNamed } from "./quick-create.js";
+import { useCharacters } from "./use-names.js";
 
 export interface Picked {
   id: string;
@@ -20,6 +22,25 @@ const CREATABLE: Partial<Record<Kind, string>> = {
 };
 
 const fold = (text: string) => text.normalize("NFKC").toLocaleLowerCase().trim();
+
+/**
+ * Finds a picker in `root` that still holds typed text nobody picked, and
+ * focuses it. Forms call this before saving, because that text would
+ * otherwise be dropped without a word. Returns the picker's label.
+ */
+export function unfinishedPicker(root: ParentNode | null): string | null {
+  const input = root?.querySelector<HTMLInputElement>(".picker input[data-unfinished]");
+  if (!input) return null;
+  input.focus();
+  return input.getAttribute("aria-label");
+}
+
+/** The error a form shows when `unfinishedPicker` finds one. */
+export function unfinishedError(label: string): Error {
+  return new Error(
+    `${label} still has typed text that was not added. Press Enter or choose a match to add it, or clear it.`,
+  );
+}
 
 async function search(archiveId: string, kind: Kind, typed: string, signal?: AbortSignal) {
   const path =
@@ -52,7 +73,8 @@ export function Picker(props: {
   placeholder?: string;
   allowCreate?: boolean;
 }) {
-  const { changed, toast } = useArchive();
+  const { changed, toast, revision } = useArchive();
+  const characters = useCharacters(props.archiveId, revision);
   const [text, setText] = useState("");
   const [hits, setHits] = useState<(Picked & { detail?: string })[]>([]);
   const [busy, setBusy] = useState(false);
@@ -158,7 +180,15 @@ export function Picker(props: {
       {props.value.length ? (
         <div className="chips">
           {props.value.map((item) => (
-            <span key={item.id} className="chip">
+            <span key={item.id} className={props.kind === "character" ? "chip person" : "chip"}>
+              {props.kind === "character" ? (
+                <Avatar
+                  archiveId={props.archiveId}
+                  picture={characters[item.id]?.picture ?? null}
+                  name={item.label}
+                  size="xs"
+                />
+              ) : null}
               {item.label}
               <button
                 type="button"
@@ -179,6 +209,7 @@ export function Picker(props: {
           (creatable ? "Type names, separated by commas" : "Start typing a name")
         }
         aria-label={props.label}
+        data-unfinished={text.trim() ? "" : undefined}
         onChange={(event) => {
           const value = event.target.value;
           setText(value);

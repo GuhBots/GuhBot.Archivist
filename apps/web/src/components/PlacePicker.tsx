@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, query } from "../api.js";
+import { api, type EntityView, query } from "../api.js";
 import { useSettled } from "../Shell.js";
 import { useArchive } from "../state.js";
 import { createChannel, createNamed } from "./quick-create.js";
@@ -28,10 +28,56 @@ export function placeLabel(place: PickedPlace): string {
 }
 
 /**
- * Chooses where an artifact is from: a server, a channel in one, or a group
- * chat. The timeline puts it in that server's or group chat's lane. A name
- * that is not in the archive yet can become a new server or group chat, or a
- * new channel in a server already chosen here.
+ * The places a record already links, as picker chips. Each channel chip
+ * then learns whether it is a group chat or which server it is in.
+ */
+export function useLinkedPlaces(
+  archiveId: string,
+  links: { servers: string[]; channels: string[] },
+  names: Record<string, string>,
+) {
+  const label = (id: string) => names[id] ?? id.slice(0, 8);
+  const state = useState<PickedPlace[]>(() => [
+    ...links.servers.map((id) => ({ kind: "server" as const, id, label: label(id) })),
+    ...links.channels.map((id) => ({ kind: "channel" as const, id, label: label(id) })),
+  ]);
+  const setPlaces = state[1];
+  const channels = links.channels.join(",");
+  useEffect(() => {
+    let live = true;
+    for (const id of channels ? channels.split(",") : []) {
+      api<Extract<EntityView, { kind: "channel" }>>(
+        `/api/archives/${archiveId}/entities/channel/${id}`,
+      )
+        .then(async (channel) => {
+          let detail: string | undefined;
+          if (channel.channelKind === "group_chat") detail = "group chat";
+          else if (channel.serverId) {
+            const server = await api<{ label: string }>(
+              `/api/archives/${archiveId}/entities/server/${channel.serverId}`,
+            );
+            detail = server.label;
+          }
+          if (live) {
+            setPlaces((current) =>
+              current.map((place) => (place.id === id ? { ...place, detail } : place)),
+            );
+          }
+        })
+        .catch(() => undefined);
+    }
+    return () => {
+      live = false;
+    };
+  }, [archiveId, channels, setPlaces]);
+  return state;
+}
+
+/**
+ * Chooses where an artifact or event is from: a server, a channel in one,
+ * or a group chat. The timeline puts it in that server's or group chat's
+ * lane. A name that is not in the archive yet can become a new server or
+ * group chat, or a new channel in a server already chosen here.
  */
 export function PlacePicker(props: {
   archiveId: string;
@@ -113,6 +159,7 @@ export function PlacePicker(props: {
         disabled={busy}
         placeholder="A server, #channel, or group chat"
         aria-label={props.label}
+        data-unfinished={text.trim() ? "" : undefined}
         onChange={(event) => setText(event.target.value)}
       />
       {hits.length || (name && !exact) ? (
@@ -170,8 +217,8 @@ export function PlacePicker(props: {
         </div>
       ) : null}
       <span className="hint">
-        The timeline shows the artifact in its server's or group chat's lane. Choose the server
-        first to add a new channel in it.
+        The timeline shows it in its server's or group chat's lane. Choose the server first to add a
+        new channel in it.
       </span>
     </div>
   );

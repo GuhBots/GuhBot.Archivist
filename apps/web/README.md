@@ -47,6 +47,14 @@ An artifact chooses where it is from: a server, a channel in one, or a group cha
 
 The character, event, and place fields in the artifact, event, and request forms accept names that are not in the archive yet. Typing names separated by commas picks each record whose name matches exactly and creates the rest. A new character, server, or group chat needs only its name. A new channel is added to a server already chosen in the field. A new event asks for the day it happened, and its title is also its description until someone changes it. Each new character, server, or event gets a low-priority card in the board's Needed column, labeled "To fill in", which is marked done once it is filled in. A misspelled duplicate is merged on the character's page. `src/components/quick-create.ts` does this. Filters and merges never create records.
 
+Text typed into one of these fields counts only once it is added, with Enter, a comma, or a match from the list. Save refuses to go on while a field still holds such text, and points to that field, so nothing typed is dropped without a word.
+
+An event chooses where it happened in the same single field as an artifact. Characters show as chips with their latest picture, in the forms and in the artifact and event windows.
+
+File fields are dashed boxes: choose a file or drop one on the box, and the chosen file shows on the line below. The media picker lists every accepted extension as well as the image, video, and audio types, because some systems type an Ogg file, such as a Discord voice message, as `application/ogg`. `src/components/FileDrop.tsx` holds the list. The server still checks each file's real format.
+
+Windows scroll only their body, so the footer with Save stays in view. On a character's page, changed facts show their Save in a row that stays at the bottom of the window.
+
 ## Timeline
 
 Drag or scroll to move, and hold Ctrl while scrolling to zoom. The ruler names days at day zoom and months otherwise, with months or years on a second row. The period at the left edge is always named, so a scrolled view shows which month or year it is in. The tray's Legend button explains the dot shades, dashed outlines, arrows, and event strips.

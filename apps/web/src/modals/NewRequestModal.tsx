@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { api, type RequestDetails } from "../api.js";
 import { DateField } from "../components/DateField.js";
-import { type Picked, Picker } from "../components/Picker.js";
+import { type Picked, Picker, unfinishedError, unfinishedPicker } from "../components/Picker.js";
 import { useWindows } from "../Shell.js";
 import { useArchive } from "../state.js";
 import { ErrorNote, Modal } from "../ui.js";
@@ -35,6 +35,7 @@ export function NewRequestModal(props: { characters?: Picked[] } = {}) {
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
+  const body = useRef<HTMLFormElement>(null);
 
   const constraint =
     kind === "date_range"
@@ -52,6 +53,11 @@ export function NewRequestModal(props: { characters?: Picked[] } = {}) {
         : day.trim());
 
   const submit = async () => {
+    const left = unfinishedPicker(body.current);
+    if (left) {
+      setError(unfinishedError(left));
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -97,6 +103,7 @@ export function NewRequestModal(props: { characters?: Picked[] } = {}) {
       }
     >
       <form
+        ref={body}
         className="content"
         onSubmit={(event) => {
           event.preventDefault();

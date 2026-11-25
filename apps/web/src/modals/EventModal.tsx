@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, type ArtifactPage, type EventDetails, query } from "../api.js";
+import { CharacterChips } from "../components/CharacterChips.js";
 import { DateField } from "../components/DateField.js";
 import { Thumb } from "../components/Media.js";
-import { type Picked, Picker } from "../components/Picker.js";
+import { type Picked, Picker, unfinishedError, unfinishedPicker } from "../components/Picker.js";
+import { PlacePicker, useLinkedPlaces } from "../components/PlacePicker.js";
 import { dayText } from "../format.js";
-import { characterPath, navigate } from "../router.js";
 import { useWindows } from "../Shell.js";
 import { useArchive } from "../state.js";
 import { ErrorNote, Modal } from "../ui.js";
@@ -141,23 +142,7 @@ export function EventModal(props: { id: string }) {
           </dd>
           <dt>Characters</dt>
           <dd>
-            {event.links.characters.length
-              ? event.links.characters.map((id, i) => (
-                  <span key={id}>
-                    {i ? ", " : ""}
-                    <button
-                      className="linkish"
-                      type="button"
-                      onClick={() => {
-                        windows.close();
-                        navigate(characterPath(archive.archiveId, id));
-                      }}
-                    >
-                      {event.names[id] ?? id.slice(0, 8)}
-                    </button>
-                  </span>
-                ))
-              : "None linked"}
+            <CharacterChips ids={event.links.characters} names={event.names} empty="None linked" />
           </dd>
           <dt>Places</dt>
           <dd>
@@ -224,18 +209,27 @@ export function EventFormModal(props: { event?: Loaded }) {
   const named = (ids: string[] = []): Picked[] =>
     ids.map((id) => ({ id, label: existing?.names[id] ?? id.slice(0, 8) }));
   const [characters, setCharacters] = useState<Picked[]>(named(existing?.links.characters));
-  const [servers, setServers] = useState<Picked[]>(named(existing?.links.servers));
-  const [channels, setChannels] = useState<Picked[]>(named(existing?.links.channels));
+  const [places, setPlaces] = useLinkedPlaces(
+    archive.archiveId,
+    existing?.links ?? { servers: [], channels: [] },
+    existing?.names ?? {},
+  );
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
+  const body = useRef<HTMLDivElement>(null);
 
   const save = async () => {
+    const left = unfinishedPicker(body.current);
+    if (left) {
+      setError(unfinishedError(left));
+      return;
+    }
     setBusy(true);
     setError(null);
     const links = {
       characters: characters.map((c) => c.id),
-      servers: servers.map((s) => s.id),
-      channels: channels.map((c) => c.id),
+      servers: places.filter((place) => place.kind === "server").map((place) => place.id),
+      channels: places.filter((place) => place.kind === "channel").map((place) => place.id),
     };
     try {
       if (!existing) {
@@ -320,12 +314,12 @@ export function EventFormModal(props: { event?: Loaded }) {
             Cancel
           </button>
           <button className="btn primary" type="button" disabled={busy} onClick={save}>
-            Save
+            {busy ? "Saving…" : "Save"}
           </button>
         </>
       }
     >
-      <div className="content">
+      <div ref={body} className="content">
         <label className="field">
           <span>Title</span>
           <input value={title} onChange={(event) => setTitle(event.target.value)} />
@@ -396,23 +390,12 @@ export function EventFormModal(props: { event?: Loaded }) {
           onChange={setCharacters}
           allowCreate
         />
-        <div className="grid2">
-          <Picker
-            archiveId={archive.archiveId}
-            kind="server"
-            label="Servers"
-            value={servers}
-            onChange={setServers}
-            allowCreate
-          />
-          <Picker
-            archiveId={archive.archiveId}
-            kind="channel"
-            label="Channels or group chats"
-            value={channels}
-            onChange={setChannels}
-          />
-        </div>
+        <PlacePicker
+          archiveId={archive.archiveId}
+          label="Where it happened"
+          value={places}
+          onChange={setPlaces}
+        />
         {existing ? (
           <label className="field">
             <span>Disputed (optional): why the date or details are in question</span>

@@ -2,7 +2,11 @@ import { type ReactNode, useEffect, useRef } from "react";
 import { mediaUrl, type Picture } from "./api.js";
 import { initials } from "./format.js";
 
-/** A dialog over the page. Escape and the backdrop close it, and focus returns where it was. */
+/**
+ * A dialog over the page. Escape and the backdrop close it, and focus
+ * returns where it was. Only the body scrolls, so the footer, which holds
+ * Save, is always in view.
+ */
 export function Modal(props: {
   title: string;
   onClose: () => void;
@@ -49,7 +53,7 @@ export function Modal(props: {
             </svg>
           </button>
         </header>
-        {props.children}
+        <div className="modal-body">{props.children}</div>
         {props.footer ? <footer>{props.footer}</footer> : <span />}
       </div>
     </div>
@@ -61,7 +65,7 @@ export function Avatar(props: {
   archiveId: string;
   picture: Picture | { mediaId: string | null } | null;
   name: string;
-  size?: "sm" | "lg" | "xl";
+  size?: "xs" | "sm" | "lg" | "xl";
   color?: string;
 }) {
   const mediaId = props.picture && "mediaId" in props.picture ? props.picture.mediaId : null;
@@ -95,11 +99,20 @@ export function Toast(props: { text: string | null }) {
   );
 }
 
+/** An error under a form. It scrolls itself into view, so a failed Save is never silent. */
 export function ErrorNote(props: { error: unknown }) {
-  if (!props.error) return null;
-  const message = props.error instanceof Error ? props.error.message : String(props.error);
+  const note = useRef<HTMLParagraphElement>(null);
+  const message = !props.error
+    ? null
+    : props.error instanceof Error
+      ? props.error.message
+      : String(props.error);
+  useEffect(() => {
+    if (message) note.current?.scrollIntoView?.({ block: "nearest" });
+  }, [message, props.error]);
+  if (!message) return null;
   return (
-    <p className="error-note" role="alert">
+    <p ref={note} className="error-note" role="alert">
       {message}
     </p>
   );

@@ -263,6 +263,8 @@ select.btn {
   display: grid;
   gap: 4px;
   font-size: 14px;
+  /* A field in a taller grid row keeps its own height, so its input never stretches. */
+  align-content: start;
 }
 .field > span {
   color: var(--muted);
@@ -1243,9 +1245,15 @@ body.graph-panning .graph-svg {
   border-radius: 10px;
   width: min(560px, 100%);
   max-height: calc(100% - 16px);
-  overflow: auto;
+  /* Only the body scrolls, so the title and the footer's Save stay in view. */
+  overflow: hidden;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
+}
+.modal-body {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 .modal.wide {
   width: min(980px, 100%);
@@ -1427,6 +1435,7 @@ body.graph-panning .graph-svg {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 10px;
+  align-items: start;
 }
 .swatches {
   display: flex;
@@ -1799,4 +1808,98 @@ body.graph-panning .graph-svg {
 .legend-popover .legend {
   white-space: normal;
   flex-wrap: wrap;
+}
+
+/* Dropping or choosing a file. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+.drop {
+  display: grid;
+  gap: 4px;
+  justify-items: center;
+  text-align: center;
+  padding: 18px 12px;
+  border: 2px dashed var(--line);
+  border-radius: 8px;
+  background: var(--outer);
+  cursor: pointer;
+}
+.drop:hover,
+.drop.over {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.drop:focus-within {
+  outline: 2px solid #c9cdfb;
+  outline-offset: 2px;
+}
+.drop-prompt {
+  color: var(--text);
+  font-size: 14px;
+}
+.drop-choose {
+  color: #a8b0ff;
+  text-decoration: underline;
+}
+.drop-file {
+  color: var(--faint);
+  font-size: 12px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.drop.chosen {
+  border-style: solid;
+  border-color: var(--accent);
+}
+.drop.chosen .drop-file {
+  color: var(--text);
+}
+.btn.small {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 13px;
+  justify-self: start;
+}
+
+/* A character's chip carries their latest picture. */
+.chip.person {
+  padding-left: 2px;
+}
+button.chip.person:hover {
+  border-color: var(--muted);
+}
+.av.xs {
+  width: 22px;
+  height: 22px;
+  font-size: 9px;
+}
+.av.xs.fallback::after {
+  display: none;
+}
+
+/* An action row that stays at the bottom of the page while its section is in view. */
+.sticky-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 -12px -12px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 8px 8px;
+  background: var(--side);
 }

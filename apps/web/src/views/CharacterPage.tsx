@@ -11,6 +11,7 @@ import {
   query,
 } from "../api.js";
 import { DateField } from "../components/DateField.js";
+import { FileDrop, IMAGE_ACCEPT } from "../components/FileDrop.js";
 import { Thumb } from "../components/Media.js";
 import { type Picked, Picker } from "../components/Picker.js";
 import { dayText, todayDay } from "../format.js";
@@ -749,14 +750,12 @@ function AccountAddForms(props: {
           <input value={name} onChange={(event) => setName(event.target.value)} />
         </label>
       ) : what === "avatar" ? (
-        <label className="field">
-          <span>Image (GIFs stay animated)</span>
-          <input
-            type="file"
-            accept="image/*"
-            onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-          />
-        </label>
+        <FileDrop
+          label="Image (GIFs stay animated)"
+          accept={IMAGE_ACCEPT}
+          file={file}
+          onFile={setFile}
+        />
       ) : (
         <Picker
           archiveId={archive.archiveId}
@@ -879,9 +878,11 @@ function FactsForm(props: { character: CharacterView; run: Run; url: string }) {
           </select>
         </label>
       </div>
-      <div>
+      {/* While there are unsaved facts, Save stays at the bottom of the window as the page scrolls. */}
+      <div className={unchanged ? undefined : "sticky-actions"}>
+        {unchanged ? null : <span className="hint grow">Unsaved changes to the facts</span>}
         <button
-          className="btn"
+          className={unchanged ? "btn" : "btn primary"}
           type="button"
           disabled={unchanged || !knownName.trim()}
           onClick={() =>
@@ -1021,14 +1022,7 @@ function FallbackPictureForm(props: { character: CharacterView; run: Run; url: s
           if (ok) setFile(null);
         }}
       >
-        <label className="field">
-          <span>Image</span>
-          <input
-            type="file"
-            accept="image/*"
-            onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-          />
-        </label>
+        <FileDrop label="Image" accept={IMAGE_ACCEPT} file={file} onFile={setFile} />
         <button className="btn primary" type="submit" disabled={!file}>
           Upload
         </button>

@@ -10,7 +10,8 @@ import {
 import { Thumb } from "../components/Media.js";
 import { useCharacterNames } from "../components/use-names.js";
 import { basisText, dayText, MONTHS, MONTHS_LONG, monthText } from "../format.js";
-import { AddArtifactModal } from "../modals/AddArtifactModal.js";
+import { AddMenu } from "../components/AddMenu.js";
+import type { PickedPlace } from "../components/PlacePicker.js";
 import { FiltersModal } from "../modals/FiltersModal.js";
 import { PlaceEditModal } from "../modals/PlaceEditModal.js";
 import { navigate, placePath } from "../router.js";
@@ -96,6 +97,21 @@ export function PlaceView(props: { placeId: string | null }) {
     );
   }
   const isServer = place.kind === "server";
+  // A new artifact starts out in the channel or place being shown.
+  const shownChannel =
+    isServer && channel && "channels" in record
+      ? record.channels.find((c) => c.id === channel)
+      : undefined;
+  const preset: PickedPlace[] = shownChannel
+    ? [{ kind: "channel", id: shownChannel.id, label: shownChannel.label, detail: place.name }]
+    : [
+        {
+          kind: isServer ? "server" : "channel",
+          id: place.id,
+          label: place.name,
+          detail: isServer ? undefined : "group chat",
+        },
+      ];
   const channels = record.kind === "server" ? record.channels : [];
   const earlier = record.history
     .filter((e) => e.kind === "server_name" || e.kind === "channel_name")
@@ -144,6 +160,8 @@ export function PlaceView(props: { placeId: string | null }) {
       }
       tray={
         <>
+          <AddMenu places={preset} />
+          <span className="sep" />
           {isServer ? (
             <>
               <span className="label">Show</span>
@@ -170,13 +188,6 @@ export function PlaceView(props: { placeId: string | null }) {
           ) : null}
           <button className="btn" type="button" onClick={() => windows.show(<FiltersModal />)}>
             Filters{filterCount(filters) ? ` (${filterCount(filters)})` : ""}
-          </button>
-          <button
-            className="btn primary"
-            type="button"
-            onClick={() => windows.show(<AddArtifactModal />)}
-          >
-            Add artifact
           </button>
           <button
             className="btn"

@@ -6,6 +6,7 @@ import { navigate, viewPath } from "../router.js";
 import { useWindows } from "../Shell.js";
 import { filterCount, filterQuery, useArchive } from "../state.js";
 import { ErrorNote } from "../ui.js";
+import { AddMenu } from "../components/AddMenu.js";
 import { ViewFrame } from "./ViewFrame.js";
 
 /** Separate artifact and event calendars, using the archive's shared day buckets. */
@@ -60,6 +61,8 @@ export function HeatmapView() {
       }
       tray={
         <>
+          <AddMenu />
+          <span className="sep" />
           <button
             className="btn"
             type="button"

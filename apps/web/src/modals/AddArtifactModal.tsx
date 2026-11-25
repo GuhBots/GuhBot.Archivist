@@ -2,6 +2,7 @@ import { useState } from "react";
 import { api, type ArtifactDetails } from "../api.js";
 import { DateField } from "../components/DateField.js";
 import { type Picked, Picker } from "../components/Picker.js";
+import { type PickedPlace, PlacePicker } from "../components/PlacePicker.js";
 import { shortId } from "../format.js";
 import { useWindows } from "../Shell.js";
 import { useArchive } from "../state.js";
@@ -38,7 +39,7 @@ const DIFFERENCE_LABELS: Record<string, string> = {
 };
 
 /** Adds one artifact from a file or a public Google Drive link, as `/archivist artifact add` does. */
-export function AddArtifactModal(props: { characters?: Picked[] }) {
+export function AddArtifactModal(props: { characters?: Picked[]; places?: PickedPlace[] }) {
   const { archive, toast, changed } = useArchive();
   const windows = useWindows();
   const [file, setFile] = useState<File | null>(null);
@@ -50,6 +51,7 @@ export function AddArtifactModal(props: { characters?: Picked[] }) {
   const [reason, setReason] = useState("");
   const [characters, setCharacters] = useState<Picked[]>(props.characters ?? []);
   const [events, setEvents] = useState<Picked[]>([]);
+  const [places, setPlaces] = useState<PickedPlace[]>(props.places ?? []);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [review, setReview] = useState<Extract<Result, { status: "duplicate" }> | null>(null);
@@ -69,6 +71,8 @@ export function AddArtifactModal(props: { characters?: Picked[] }) {
     }
     for (const c of characters) form.append("characters", c.id);
     for (const e of events) form.append("events", e.id);
+    for (const place of places)
+      form.append(place.kind === "server" ? "servers" : "channels", place.id);
     if (drive.trim()) form.append("driveLink", drive.trim());
     if (file) form.append("file", file, file.name);
     try {
@@ -207,6 +211,13 @@ export function AddArtifactModal(props: { characters?: Picked[] }) {
           label="Characters in it"
           value={characters}
           onChange={setCharacters}
+          allowCreate
+        />
+        <PlacePicker
+          archiveId={archive.archiveId}
+          label="Where it is from"
+          value={places}
+          onChange={setPlaces}
         />
         <Picker
           archiveId={archive.archiveId}
@@ -214,6 +225,7 @@ export function AddArtifactModal(props: { characters?: Picked[] }) {
           label="Events it shows"
           value={events}
           onChange={setEvents}
+          allowCreate
         />
         <div className="grid2">
           <DateField

@@ -406,11 +406,16 @@ test("searches find characters, accounts, servers, and channels by name, alias, 
   assert.deepEqual(await search("server", HANGOUT_DISCORD_ID), [
     { id: hangout, label: "The Hangout" },
   ]);
-  assert.deepEqual(await search("channel", "ROAD"), [{ id: trip, label: "Road Trip" }]);
-  assert.deepEqual(await search("channel", GENERAL_DISCORD_ID), [
-    { id: general, label: "general" },
+  // Channels say whether they are group chats or which server they are in.
+  assert.deepEqual(await search("channel", "ROAD"), [
+    { id: trip, label: "Road Trip", detail: "group chat" },
   ]);
-  assert.deepEqual(await search("channel", short(general)), [{ id: general, label: "general" }]);
+  assert.deepEqual(await search("channel", GENERAL_DISCORD_ID), [
+    { id: general, label: "general", detail: "The Hangout" },
+  ]);
+  assert.deepEqual(await search("channel", short(general)), [
+    { id: general, label: "general", detail: "The Hangout" },
+  ]);
   assert.deepEqual(await search("server", "nowhere"), []);
 });
 

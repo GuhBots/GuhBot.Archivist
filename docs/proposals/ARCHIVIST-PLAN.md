@@ -401,6 +401,7 @@ The owner confirmed these choices on 2026-11-24. They supersede the earlier in-b
 | Real data | None exists yet. The cutover moves no data, so `S5` is running only the service and the API-backed bot, and transferring this plan |
 | Browser checks | Run locally against the seeded sample archive, not in CI, to keep runner cost down. CI runs the server suites and repository checks |
 | Capacity | Archives are expected to stay under 200 characters. No capacity benchmark or performance measurement is required |
+| Website feedback | Every view's tray has one round add button with a menu instead of separate add buttons. Artifacts choose where they are from, a server, channel, or group chat, so the timeline puts them in that lane. The timeline's legend is behind a Legend button, and its ruler keeps day, month, and year labels on separate rows |
 | Command servers | The servers with contributor commands live in the bot's `guhbot.db`, not in a setting. Service owners add, remove, and list them with `/archivist-admin server`, and each change updates that server's commands without a restart. `ARCHIVIST_GUILD_IDS` only seeds the list once. Per-archive member whitelists stay in the service, because the website checks them at sign-in without the bot |
 
 No product decision remains open from the three questions asked in this planning pass. Implementation must still reconcile and test the target repository's unfinished work against this contract. The standalone local viewer remains outside this request. Work observed in the sibling repository does not by itself add it to the accepted scope.
@@ -1197,7 +1198,7 @@ The owner's accepted batches A through F are reconciled here. Later clarificatio
 | Deletion | Permanent archive record deletion, retained media, removed own edit entries, no deletion log, and unchanged external upload-history messages |
 | Scope | Full hosted app and all six views (the album was added in the prototype review), with separate standalone viewer later |
 | Archive selection | Discord commands may omit the archive and reuse the contributor's last explicit selection, stored by the service. Replies always name the archive |
-| Intake links | Intake links only existing records. Contributors create a missing character before linking it |
+| Intake links | Superseded on 2026-11-24 by the owner's website feedback. On the website, a typed name that matches no record creates one: a character, server, or group chat from its name, a channel in a chosen server, or an event from its title and a day, since every event needs one. Each new character, server, or event gets a low-priority "to fill in" card on the board. Misspellings are fixed by merging or deleting. Filters and merges never create records |
 | Identification cards | A yes/no unidentified-characters flag, set from a button on the artifact reply rather than an intake field. Missing-characters cards come only from the flag |
 | Intake volume | One artifact per submission, with thousands expected over time. Keep each Discord intake to as few steps as possible |
 | Confirmed as specified | Any archive member may permanently delete permitted records. Artifact estimates remain single calendar days |

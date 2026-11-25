@@ -23,6 +23,8 @@ export function registerSearchFunctions(db: Database.Database): void {
 export interface SearchHit {
   id: string;
   label: string;
+  /** For channels: "group chat", "direct message", or the server's name, so pickers can tell them apart. */
+  detail?: string;
 }
 
 const DEFAULT_LIMIT = 25;
@@ -65,9 +67,12 @@ const ENTITY_QUERIES: Record<EntityKind, string> = {
   server: `SELECT id, label FROM servers
     WHERE instr(${FOLD_FUNCTION}(label), @query) > 0 OR substr(id, 1, @prefixLength) = @prefix OR discord_id = @typed
     ORDER BY label, id LIMIT @limit`,
-  channel: `SELECT id, label FROM channels
-    WHERE instr(${FOLD_FUNCTION}(label), @query) > 0 OR substr(id, 1, @prefixLength) = @prefix OR discord_id = @typed
-    ORDER BY label, id LIMIT @limit`,
+  channel: `SELECT c.id, c.label,
+      CASE c.kind WHEN 'group_chat' THEN 'group chat' WHEN 'direct_message' THEN 'direct message'
+        ELSE coalesce(s.label, 'no server') END AS detail
+    FROM channels c LEFT JOIN servers s ON s.id = c.server_id
+    WHERE instr(${FOLD_FUNCTION}(c.label), @query) > 0 OR substr(c.id, 1, @prefixLength) = @prefix OR c.discord_id = @typed
+    ORDER BY c.label, c.id LIMIT @limit`,
 };
 
 /** Entities whose name, alias, or label contains the text, or whose ID starts with it. */

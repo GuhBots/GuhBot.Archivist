@@ -59,7 +59,7 @@ export function ArtifactModal(props: { id: string; nav?: Nav }) {
 
   if (!artifact) {
     return (
-      <Modal title={title} onClose={windows.close}>
+      <Modal title={title} onClose={windows.close} onKey={onKey}>
         <div className="content">{error ? <ErrorNote error={error} /> : "Loading…"}</div>
       </Modal>
     );

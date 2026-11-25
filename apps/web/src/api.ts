@@ -58,6 +58,9 @@ export function query(values: Record<string, QueryValue>): string {
   return text ? `?${text}` : "";
 }
 
+/** The window event `api` sends when the service says the session ended or lost access. */
+export const ACCESS_ENDED = "archivist:access-ended";
+
 export interface CallOptions {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   json?: unknown;
@@ -99,6 +102,14 @@ export async function api<T>(path: string, options: CallOptions = {}): Promise<T
     details?: Record<string, unknown>;
   } | null;
   if (!response.ok) {
+    // A session ends when its user leaves every whitelist. The app then shows why, wherever it was.
+    const ended =
+      data?.code === "no_session"
+        ? "signed-out"
+        : data?.details?.reason === "not_admitted"
+          ? "not-admitted"
+          : null;
+    if (ended) window.dispatchEvent(new CustomEvent(ACCESS_ENDED, { detail: ended }));
     throw new ApiError(
       response.status,
       data?.code ?? "unknown",

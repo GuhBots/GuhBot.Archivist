@@ -6,6 +6,7 @@ import Database from "better-sqlite3";
 import { createArchivistContext } from "../../../src/archivist/context.js";
 import { buildWebApp } from "../../../src/archivist/web/app.js";
 import { createSession } from "../../../src/archivist/web/sessions.js";
+import { registerAdminRoutes } from "../../../src/service/admin-routes.js";
 import { MEMBER, OWNER } from "../helpers/context.js";
 import { closeFixtureWriter } from "../helpers/media.js";
 import { seedArchive } from "./seed.js";
@@ -17,7 +18,9 @@ import { seedArchive } from "./seed.js";
  *   node .test-build/tests/archivist/e2e/serve.js [port] [base path]
  *
  * It prints the address and a session cookie for a member and for the
- * owner, and runs until stopped. Data lives in a temporary folder.
+ * owner, and runs until stopped. Data lives in a temporary folder. The
+ * owner's administration routes are mounted as the service mounts them, so a
+ * browser check can remove a member from a whitelist.
  */
 
 const port = Number(process.argv[2] ?? 3100);
@@ -43,6 +46,9 @@ const { app } = buildWebApp({
   isOwner: async (userId) => userId === OWNER.userId,
   frontendRoot: fileURLToPath(new URL("../../../../../web/dist/", import.meta.url)),
   logError: (message, error) => console.error(message, error),
+  extend(scope, auth) {
+    registerAdminRoutes(scope, context, auth, (message, error) => console.error(message, error));
+  },
 });
 await app.listen({ host: "127.0.0.1", port });
 const cookie = (actor: typeof MEMBER) =>

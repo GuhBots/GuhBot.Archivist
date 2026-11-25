@@ -6,6 +6,7 @@ import { AddMenu } from "../components/AddMenu.js";
 import { FiltersModal } from "../modals/FiltersModal.js";
 import { useWindows } from "../Shell.js";
 import { filterCount, filterQuery, loadLocal, saveLocal, useArchive } from "../state.js";
+import { ErrorNote } from "../ui.js";
 import { ViewFrame } from "./ViewFrame.js";
 
 type Sort = "newest" | "oldest" | "added";
@@ -21,11 +22,13 @@ export function AlbumView() {
   const [next, setNext] = useState<string | null>(null);
   const [total, setTotal] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<unknown>(null);
   const sentinel = useRef<HTMLDivElement>(null);
   const filterKey = JSON.stringify(filterQuery(filters));
 
   const load = async (cursor: string | null, replace: boolean) => {
     setLoading(true);
+    setError(null);
     try {
       const page = await api<ArtifactPage>(
         `/api/archives/${archive.archiveId}/artifacts${query({ ...filterQuery(filters), sort, limit: 60, cursor })}`,
@@ -33,6 +36,8 @@ export function AlbumView() {
       setItems((current) => (replace ? page.items : [...current, ...page.items]));
       setNext(page.next);
       setTotal(page.total);
+    } catch (failure) {
+      setError(failure);
     } finally {
       setLoading(false);
     }
@@ -139,6 +144,7 @@ export function AlbumView() {
       }
     >
       <div className="album">
+        <ErrorNote error={error} />
         {total === 0 ? <div className="empty">Nothing here matches the filters.</div> : null}
         {groups.map((group, g) => (
           <section

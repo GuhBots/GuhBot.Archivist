@@ -49,7 +49,7 @@ Remove `ARCHIVIST_SERVICE_TOKEN` from Archivist's `.env` and restart Archivist. 
 | --- | --- |
 | Another machine | The public address, the same as Archivist's `ARCHIVIST_BASE_URL`, such as `https://guhbot.example.com/archivist`. Always HTTPS |
 | The same machine | The loopback address Archivist publishes, such as `http://127.0.0.1:3000`, when the bot runs outside a container. Add the path when `ARCHIVIST_BASE_URL` has one |
-| Another container on the same machine | `http://archivist:3000` over the shared network that `compose.local.yaml` sets up, as [Trying Both on One Machine](#trying-both-on-one-machine) describes, with the path when there is one |
+| Another container on the same machine | `http://archivist:3000` over the shared network that `compose.local.yaml` sets up, with the path when there is one, such as `http://archivist:3000/archivist`. [Trying Both on One Machine](#trying-both-on-one-machine) covers a computer, and [Both Services on One Machine](self-hosting.md#both-services-on-one-machine) covers a server |
 
 A private address avoids the Cloudflare upload limit described in [Self-Hosting](self-hosting.md#your-own-domain-with-cloudflare-tunnel), because the bot's uploads then never pass through Cloudflare. A private network does not replace the token: the bot sends it either way.
 

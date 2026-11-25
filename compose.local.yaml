@@ -1,12 +1,17 @@
-# Local testing with the GuhBot Discord bot running in its own container on
-# this machine. Both stacks join the shared guhbot network, where the bot
-# reaches this service at http://archivist:3000. Create the network once:
+# For the GuhBot Discord bot running in its own container on this machine,
+# such as a laptop for testing or one server running both. Both stacks join
+# the shared guhbot network, where the bot reaches this service at
+# http://archivist:3000, plus the path in ARCHIVIST_BASE_URL when it has one.
+# Create the network once:
 #
 #   docker network create guhbot
 #
 # Load this file with the others, for example by adding to .env:
 #
 #   COMPOSE_FILE=compose.yaml:compose.override.yaml:compose.local.yaml
+#
+# A server without a clone has no compose.override.yaml, so it uses
+# COMPOSE_FILE=compose.yaml:compose.local.yaml instead.
 #
 # Servers whose bot runs on another machine do not need it. The bot reaches
 # them over HTTPS instead. See docs/guides/connecting-the-bot.md.

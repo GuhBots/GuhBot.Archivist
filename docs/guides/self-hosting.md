@@ -106,7 +106,7 @@ Run these from the service's folder.
 | Restart | `docker compose restart` |
 | Open a shell in the running container | `docker compose exec app sh` |
 
-Updates are manual. To update, change `APP_VERSION` if it is pinned, then run the update command. To roll back, set `APP_VERSION` to the previous release and run the update command again. If the requested version does not exist, the command stops with an error and the running service is left alone.
+Without [Automatic Updates](#automatic-updates), updates are manual. To update, change `APP_VERSION` if it is pinned, then run the update command. To roll back, set `APP_VERSION` to the previous release and run the update command again. If the requested version does not exist, the command stops with an error and the running service is left alone.
 
 To clean up old images after updates, run `docker image prune`.
 
@@ -122,27 +122,134 @@ Each setting the service needs is listed in two places in the repository. `.env.
 
 A required setting written as `${NAME:?message}` in `compose.yaml` stops the start with that message when its value is missing.
 
-## Running Alongside the Bot
+## Automatic Updates
+
+Every merge to `main` publishes a new `main` image within a few minutes, as [Releasing](releasing.md) describes. Nothing tells the server about it, so the server checks instead. [`tools/host/update-stacks.sh`](../../tools/host/update-stacks.sh) downloads any newer image for each stack's tag and recreates only the containers whose image changed. A systemd timer runs it every five minutes, so a merge reaches the server within about ten minutes.
+
+A stack follows whatever `APP_VERSION` its `.env` selects. With `main`, every merge is deployed. With a release number, the timer changes nothing until you change the number.
+
+These steps are for Linux, including Raspberry Pi OS. They use a systemd user timer, which runs as your user with your Docker access and your `docker login`.
+
+1. Download the script and the two unit files.
+
+   ```sh
+   cd ~/services
+   curl -fsSLO https://raw.githubusercontent.com/GuhBots/GuhBot.Archivist/main/tools/host/update-stacks.sh
+   chmod +x update-stacks.sh
+   mkdir -p ~/.config/systemd/user && cd ~/.config/systemd/user
+   curl -fsSLO https://raw.githubusercontent.com/GuhBots/GuhBot.Archivist/main/tools/host/guhbot-update.service
+   curl -fsSLO https://raw.githubusercontent.com/GuhBots/GuhBot.Archivist/main/tools/host/guhbot-update.timer
+   ```
+
+   The service updates `~/services/archivist`, then `~/services/guhbot`. Edit its `ExecStart` line if your folders differ, or if this machine runs only one of the two.
+
+2. Let your user's timers run without you being logged in, then turn the timer on.
+
+   ```sh
+   loginctl enable-linger "$USER"
+   systemctl --user daemon-reload
+   systemctl --user enable --now guhbot-update.timer
+   ```
+
+| Task | Command |
+| --- | --- |
+| Update now | `systemctl --user start guhbot-update` |
+| See when it runs next | `systemctl --user list-timers` |
+| Read what it did | `journalctl --user -u guhbot-update` |
+| Pause automatic updates | `systemctl --user disable --now guhbot-update.timer` |
+
+A failed download leaves that stack running as it was, and the next check tries again. Each service applies its own database migrations when it starts, so an update needs no other step. To stop following `main`, set `APP_VERSION` to a release number. The timer then keeps the server on that release.
+
+## Both Services on One Machine
 
 The Discord bot runs from its own repository and its own `compose.yaml`, on this machine or another. Each keeps its own `data` volume. Never mount Archivist's data in the bot's container: only Archivist writes archives. The bot reaches Archivist over its API with the service token, as [Connecting the Bot](connecting-the-bot.md) describes.
 
-Run only one copy of the bot with a given Discord token. When moving a service to another machine, stop it on the old machine first.
+When both run on one server, they share a private Docker network. The bot reaches Archivist directly, and its uploads never pass through Cloudflare's upload limit. The tunnel publishes only the website.
+
+```text
+~/services
+├── update-stacks.sh      Automatic Updates
+├── archivist/            compose.yaml, compose.local.yaml, .env
+└── guhbot/               the bot's compose.yaml, compose.local.yaml, .env
+```
+
+1. Create the shared network once.
+
+   ```sh
+   docker network create guhbot
+   ```
+
+2. Set up Archivist in `~/services/archivist` as [Deploy](#deploy) describes, and also download `compose.local.yaml`, which joins the shared network under the name `archivist`.
+
+   ```sh
+   cd ~/services/archivist
+   curl -fsSLO https://raw.githubusercontent.com/GuhBots/GuhBot.Archivist/main/compose.local.yaml
+   ```
+
+3. Set up the bot in `~/services/guhbot` the same way, from the bot's repository.
+
+   ```sh
+   mkdir -p ~/services/guhbot && cd ~/services/guhbot
+   curl -fsSLO https://raw.githubusercontent.com/GuhBots/GuhBot.Discord/main/compose.yaml
+   curl -fsSLO https://raw.githubusercontent.com/GuhBots/GuhBot.Discord/main/compose.local.yaml
+   curl -fsSL https://raw.githubusercontent.com/GuhBots/GuhBot.Discord/main/.env.example -o .env
+   chmod 600 .env
+   ```
+
+4. Fill in both `.env` files. Besides each service's own settings, set these:
+
+   | File | Setting | Value |
+   | --- | --- | --- |
+   | Both | `COMPOSE_FILE` | `compose.yaml:compose.local.yaml`, to join the shared network |
+   | Both | `APP_VERSION` | `main` until the first release, because no `latest` image exists before it |
+   | Both | `ARCHIVIST_SERVICE_TOKEN` | The same new value from `openssl rand -hex 32` |
+   | Archivist | `COMPOSE_PROFILES` | `tunnel`, so every command includes the [Cloudflare Tunnel](#your-own-domain-with-cloudflare-tunnel) |
+   | Archivist | `ARCHIVIST_BASE_URL` | The public address, such as `https://guhbot.example.com/archivist` |
+   | Bot | `ARCHIVIST_API_URL` | `http://archivist:3000` plus the path in `ARCHIVIST_BASE_URL`, such as `http://archivist:3000/archivist` |
+
+5. If the images are private, [log in to GHCR](#private-images) once.
+6. Start Archivist, then the bot.
+
+   ```sh
+   cd ~/services/archivist && docker compose up -d
+   cd ~/services/guhbot && docker compose up -d
+   ```
+
+7. In Discord, run `/archivist-admin status`. It reports whether the bot reached Archivist.
+
+Then turn on [Automatic Updates](#automatic-updates) to follow every merge to `main`.
+
+Run only one copy of the bot with a given Discord token. When moving a service to another machine, stop it on the old machine first. To test on your own computer while the server runs, use a separate test bot application with its own token.
 
 ## Your Own Domain With Cloudflare Tunnel
 
 A Cloudflare Tunnel puts the website on your domain without opening or forwarding ports on your router. A small `cloudflared` container makes an outgoing connection to Cloudflare, and Cloudflare sends your visitors through it. `compose.yaml` includes one in the optional `tunnel` profile.
 
 1. Add your domain to Cloudflare, if it is not there already.
-2. In the Cloudflare dashboard, open **Zero Trust**, then **Networks**, then **Tunnels**, and create a tunnel with the **Cloudflared** connector. Copy its token, and put it in `.env` as `TUNNEL_TOKEN`.
-3. Add a **Public Hostname** to the tunnel: your subdomain and domain, an optional path such as `archivist`, and the service `HTTP` `app:3000`. The tunnel keeps the path, so the service sees the same addresses the browser uses.
+2. In the Cloudflare dashboard, open **Networking**, then **Tunnels**, and create a tunnel with the **Cloudflared** connector. Older dashboards put **Tunnels** under **Zero Trust**, then **Networks**. Copy the tunnel's token, and put it in `.env` as `TUNNEL_TOKEN`. You do not need to run the install command Cloudflare shows: the `tunnel` container runs `cloudflared`.
+3. On the tunnel's **Routes** tab, select **Add route**, then **Published application**. Older dashboards call it a **Public Hostname**. Enter your subdomain and domain, an optional path such as `archivist`, and the service `HTTP` with the address `app:3000`. Cloudflare creates the DNS record. The tunnel keeps the path, so the service sees the same addresses the browser uses.
 4. Set `ARCHIVIST_BASE_URL` to the public address, such as `https://guhbot.example.com/archivist`, and add `https://guhbot.example.com/archivist/auth/discord/callback` to the Discord application's redirects.
-5. Start the service with the tunnel:
+5. Add `COMPOSE_PROFILES=tunnel` to `.env`, so that every `docker compose` command for this stack starts, updates, and stops the tunnel along with the service. Without it, add `--profile tunnel` to every command instead.
+6. Start the service and the tunnel:
 
    ```sh
-   docker compose --profile tunnel up -d
+   docker compose up -d
    ```
 
-Use `--profile tunnel` with every `docker compose` command for this stack, such as `docker compose --profile tunnel up -d --pull always`, so the tunnel is updated and stopped along with the service.
+7. Open the public address and sign in with Discord.
+
+The tunnel only carries the website. A bot on the same machine reaches Archivist over the shared Docker network instead, as [Both Services on One Machine](#both-services-on-one-machine) describes.
+
+### Testing on Your Own Computer Through the Tunnel
+
+The tunnel runs wherever its container runs, so you can try the real public address from your own computer before setting up a server. Run Archivist on your computer with the steps above, and the public address reaches your computer.
+
+A tunnel sends visitors to every place it runs. Never run one tunnel on two machines at once: each visitor would land on one machine or the other, and each machine has different archives. Use one of these instead.
+
+* **Move it:** Test on your computer first. When the server is ready, run `docker compose down` on your computer, then start the tunnel on the server. The same token, address, and Discord redirect move with it.
+* **Keep a test address:** Create a second tunnel with its own published application, such as `guhbot-test.example.com/archivist`, for your computer. Give your computer's `.env` that tunnel's token and address, and add that address's `/auth/discord/callback` to the Discord application's redirects too. Your computer then never takes the server's visitors.
+
+Signing in works only at the address in `ARCHIVIST_BASE_URL`, so open the public address rather than `localhost` while the tunnel is in use.
 
 Cloudflare limits the size of each request on its Free and Pro plans to about 100 MB. Archivist accepts files up to 100 MiB, so the largest files can be refused by Cloudflare before they reach the service. Check Cloudflare's current upload limit for your plan, and its terms for serving large video, before relying on the tunnel for every upload. A bot on the same machine or network can use a private address for its uploads instead, as [Connecting the Bot](connecting-the-bot.md) explains.
 
@@ -231,7 +338,7 @@ When more than one stack serves a website, run a reverse proxy, such as [Caddy](
 
 ## Private Images
 
-Images are public by default in this template, so servers need no login. If the package is private, create a GitHub personal access token with only the `read:packages` scope and log in once on each server.
+Images are public by default in this template, so servers need no login. If the package is private, as GuhBot's packages are until an owner makes them public, create a GitHub personal access token with only the `read:packages` scope and log in once on each server.
 
 ```sh
 docker login ghcr.io -u <github-username>

@@ -11,6 +11,8 @@ Scripts that check the repository locally and in continuous integration. Each sc
 | `scripts/check_links.py` | Checks that relative Markdown links point to existing files, headings, and anchors |
 | `scripts/check_whitespace.py` | Checks the line-ending, final-newline, and trailing-whitespace rules from `.editorconfig` |
 
+`host/` holds files for servers rather than checks: `update-stacks.sh` and the `guhbot-update` systemd timer that runs it, as [Automatic Updates](../docs/guides/self-hosting.md#automatic-updates) describes.
+
 `scripts/acronym-ignore.txt` lists uppercase words the acronym check should accept that are not acronyms. Define real acronyms in the glossary instead of listing them here.
 
 ## Running Checks Locally

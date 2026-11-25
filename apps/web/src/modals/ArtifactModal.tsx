@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useState } from "react";
-import { api, ApiError, type ArtifactDetails, type EntityView } from "../api.js";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { api, ApiError, type ArtifactDetails } from "../api.js";
+import { CharacterChips } from "../components/CharacterChips.js";
 import { DateField } from "../components/DateField.js";
 import { FullMedia } from "../components/Media.js";
-import { type Picked, Picker } from "../components/Picker.js";
-import { type PickedPlace, PlacePicker } from "../components/PlacePicker.js";
+import { type Picked, Picker, unfinishedError, unfinishedPicker } from "../components/Picker.js";
+import { PlacePicker, useLinkedPlaces } from "../components/PlacePicker.js";
 import { basisText, dayText, shortId } from "../format.js";
-import { characterPath, navigate, viewPath } from "../router.js";
+import { navigate, viewPath } from "../router.js";
 import { useWindows } from "../Shell.js";
 import { useArchive } from "../state.js";
 import { ErrorNote, Modal } from "../ui.js";
@@ -134,7 +135,23 @@ export function ArtifactModal(props: { id: string; nav?: Nav }) {
       onClose={windows.close}
       onKey={onKey}
       footer={
-        editing ? null : (
+        editing ? (
+          <>
+            <button
+              className="btn ghost"
+              type="button"
+              onClick={() => {
+                setEditing(false);
+                setError(null);
+              }}
+            >
+              Cancel
+            </button>
+            <button className="btn primary" type="submit" form={EDIT_FORM}>
+              Save
+            </button>
+          </>
+        ) : (
           <>
             {props.nav ? (
               <>
@@ -191,8 +208,9 @@ export function ArtifactModal(props: { id: string; nav?: Nav }) {
           {editing ? (
             <EditArtifact
               artifact={artifact}
-              onCancel={() => setEditing(false)}
+              onError={setError}
               onSave={async (patch) => {
+                setError(null);
                 if (await save(patch)) {
                   setEditing(false);
                   toast("Saved.");
@@ -205,23 +223,11 @@ export function ArtifactModal(props: { id: string; nav?: Nav }) {
               <dl className="kv">
                 <dt>Characters</dt>
                 <dd>
-                  {artifact.links.characters.length
-                    ? artifact.links.characters.map((id, i) => (
-                        <span key={id}>
-                          {i ? ", " : ""}
-                          <button
-                            className="linkish"
-                            type="button"
-                            onClick={() => {
-                              windows.close();
-                              navigate(characterPath(archive.archiveId, id));
-                            }}
-                          >
-                            {artifact.names[id] ?? shortId(id)}
-                          </button>
-                        </span>
-                      ))
-                    : "No characters linked yet"}
+                  <CharacterChips
+                    ids={artifact.links.characters}
+                    names={artifact.names}
+                    empty="No characters linked yet"
+                  />
                   <label className="inline-check">
                     <input
                       type="checkbox"
@@ -335,10 +341,13 @@ export function ArtifactModal(props: { id: string; nav?: Nav }) {
   );
 }
 
+/** The edit form's ID, so the window's footer can hold its Save button. */
+const EDIT_FORM = "edit-artifact";
+
 function EditArtifact(props: {
   artifact: Loaded;
   onSave(patch: Record<string, unknown>): void;
-  onCancel(): void;
+  onError(error: unknown): void;
 }) {
   const { archive } = useArchive();
   const { artifact } = props;
@@ -350,41 +359,18 @@ function EditArtifact(props: {
     ids.map((id) => ({ id, label: artifact.names[id] ?? id.slice(0, 8) }));
   const [characters, setCharacters] = useState<Picked[]>(named(artifact.links.characters));
   const [events, setEvents] = useState<Picked[]>(named(artifact.links.events));
-  const [places, setPlaces] = useState<PickedPlace[]>([
-    ...artifact.links.servers.map((id) => ({ kind: "server" as const, ...named([id])[0]! })),
-    ...artifact.links.channels.map((id) => ({ kind: "channel" as const, ...named([id])[0]! })),
-  ]);
-  // Channel chips say whether each is a group chat or which server it is in.
-  useEffect(() => {
-    let live = true;
-    for (const id of artifact.links.channels) {
-      api<Extract<EntityView, { kind: "channel" }>>(
-        `/api/archives/${archive.archiveId}/entities/channel/${id}`,
-      )
-        .then((channel) => {
-          const detail =
-            channel.channelKind === "group_chat"
-              ? "group chat"
-              : channel.serverId
-                ? (artifact.names[channel.serverId] ?? undefined)
-                : undefined;
-          if (live) {
-            setPlaces((current) =>
-              current.map((place) => (place.id === id ? { ...place, detail } : place)),
-            );
-          }
-        })
-        .catch(() => undefined);
-    }
-    return () => {
-      live = false;
-    };
-  }, [archive.archiveId, artifact]);
+  const [places, setPlaces] = useLinkedPlaces(archive.archiveId, artifact.links, artifact.names);
+  const form = useRef<HTMLFormElement>(null);
   const diff = (before: string[], after: { id: string }[]) => ({
     add: after.map((p) => p.id).filter((id) => !before.includes(id)),
     remove: before.filter((id) => !after.some((p) => p.id === id)),
   });
   const save = () => {
+    const left = unfinishedPicker(form.current);
+    if (left) {
+      props.onError(unfinishedError(left));
+      return;
+    }
     const c = diff(artifact.links.characters, characters);
     const e = diff(artifact.links.events, events);
     const sv = diff(
@@ -420,6 +406,8 @@ function EditArtifact(props: {
   };
   return (
     <form
+      ref={form}
+      id={EDIT_FORM}
       style={{ display: "grid", gap: 10 }}
       onSubmit={(event) => {
         event.preventDefault();
@@ -476,14 +464,6 @@ function EditArtifact(props: {
         If someone else saves first, you see their changes and choose again. Nothing is overwritten
         silently.
       </p>
-      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-        <button className="btn ghost" type="button" onClick={props.onCancel}>
-          Cancel
-        </button>
-        <button className="btn primary" type="submit">
-          Save
-        </button>
-      </div>
     </form>
   );
 }

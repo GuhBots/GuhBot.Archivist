@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { PALETTE } from "../../../server/src/archivist/palette.js";
 import { api, ApiError, type EntityView, mediaUrl } from "../api.js";
 import { DateField } from "../components/DateField.js";
+import { FileDrop, IMAGE_ACCEPT } from "../components/FileDrop.js";
 import { dayText } from "../format.js";
 import { useWindows } from "../Shell.js";
 import { useArchive } from "../state.js";
@@ -262,14 +263,12 @@ export function PlaceEditModal(props: { kind: "server" | "channel"; id: string }
               ))}
             </div>
             <div className="grid2">
-              <label className="field">
-                <span>{isGroupChat ? "Replace the icon" : "Add an icon"}</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(event) => setIconFile(event.target.files?.[0] ?? null)}
-                />
-              </label>
+              <FileDrop
+                label={isGroupChat ? "Replace the icon" : "Add an icon"}
+                accept={IMAGE_ACCEPT}
+                file={iconFile}
+                onFile={setIconFile}
+              />
               {isGroupChat ? null : (
                 <DateField
                   archiveId={archive.archiveId}

@@ -282,6 +282,13 @@ select.btn {
   min-height: 88px;
   resize: vertical;
 }
+/* A field's own control fills its column, so narrow grid columns never overlap. */
+.field > input,
+.field > select,
+.field > textarea {
+  width: 100%;
+  min-width: 0;
+}
 .hint {
   color: var(--faint);
   font-size: 12px;
@@ -984,6 +991,23 @@ body.graph-panning .graph-svg {
 .graph-svg.hovering .edge:not(.hl),
 .graph-svg.hovering .node:not(.hl) {
   opacity: 0.12;
+}
+/* Keyboard focus rings the circle or thickens the line, instead of a box around the group. */
+.graph-svg .node:focus-visible,
+.graph-svg .edge:focus-visible {
+  outline: none;
+}
+.graph-svg .node:focus-visible circle {
+  stroke: var(--accent);
+  stroke-width: 3;
+}
+.graph-svg .edge:focus-visible line:last-of-type {
+  stroke-opacity: 1;
+  stroke-width: 4;
+}
+.graph-svg .node:focus:not(:focus-visible),
+.graph-svg .edge:focus:not(:focus-visible) {
+  outline: none;
 }
 .graph-svg .node text.name {
   fill: var(--muted);

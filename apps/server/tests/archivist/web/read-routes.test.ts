@@ -378,3 +378,18 @@ test("places, characters, records, events, and search fill the website's columns
     400,
   );
 });
+
+test("channel search says whether each match is a group chat or which server it is in", async (t) => {
+  const { h, archiveId, general, trip } = await seed(t);
+  const cookie = h.cookie(MEMBER);
+  const hits = async (q: string) =>
+    (
+      (await get(h, `/api/archives/${archiveId}/entities/channel?q=${q}`, cookie)).json() as {
+        items: { id: string; label: string; detail?: string }[];
+      }
+    ).items;
+  assert.deepEqual(await hits("gen"), [
+    { id: general.id, label: "general", detail: "The Hangout" },
+  ]);
+  assert.deepEqual(await hits("road"), [{ id: trip.id, label: "Road Trip", detail: "group chat" }]);
+});

@@ -20,6 +20,7 @@ import { characterPath, navigate, viewPath } from "../router.js";
 import { useWindows } from "../Shell.js";
 import { EMPTY_FILTERS, useArchive } from "../state.js";
 import { Avatar, ErrorNote } from "../ui.js";
+import { AddMenu } from "../components/AddMenu.js";
 import { ViewFrame } from "./ViewFrame.js";
 
 /**
@@ -175,6 +176,8 @@ export function CharacterPage(props: { id: string }) {
       label="Character"
       tray={
         <>
+          <AddMenu characters={[{ id: character.id, label: name }]} />
+          <span className="sep" />
           <button className="btn" type="button" onClick={() => window.history.back()}>
             Back
           </button>

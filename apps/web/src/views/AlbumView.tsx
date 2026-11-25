@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api, type ArtifactPage, type ArtifactSummary, query } from "../api.js";
 import { Thumb } from "../components/Media.js";
 import { dayText, MONTHS_LONG } from "../format.js";
-import { AddArtifactModal } from "../modals/AddArtifactModal.js";
+import { AddMenu } from "../components/AddMenu.js";
 import { FiltersModal } from "../modals/FiltersModal.js";
 import { useWindows } from "../Shell.js";
 import { filterCount, filterQuery, loadLocal, saveLocal, useArchive } from "../state.js";
@@ -108,6 +108,8 @@ export function AlbumView() {
       }
       tray={
         <>
+          <AddMenu />
+          <span className="sep" />
           {seg<Sort>(
             "Sort",
             sort,
@@ -132,13 +134,6 @@ export function AlbumView() {
           <span className="sep" />
           <button className="btn" type="button" onClick={() => windows.show(<FiltersModal />)}>
             Filters{filterCount(filters) ? ` (${filterCount(filters)})` : ""}
-          </button>
-          <button
-            className="btn primary"
-            type="button"
-            onClick={() => windows.show(<AddArtifactModal />)}
-          >
-            Add artifact
           </button>
         </>
       }

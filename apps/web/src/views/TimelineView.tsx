@@ -16,8 +16,7 @@ import {
   type TimelineView as Timeline,
 } from "../api.js";
 import { dayNumber, dayOfNumber, dayText, initials, MONTHS, monthText } from "../format.js";
-import { AddArtifactModal } from "../modals/AddArtifactModal.js";
-import { EventFormModal } from "../modals/EventModal.js";
+import { AddMenu } from "../components/AddMenu.js";
 import { FiltersModal } from "../modals/FiltersModal.js";
 import { characterPath, navigate } from "../router.js";
 import { useSettled, useWindows } from "../Shell.js";
@@ -87,7 +86,7 @@ export function TimelineView() {
   } | null>(null);
   const [size, setSize] = useState({ width: 800, height: 520 });
   const [popover, setPopover] = useState<{
-    kind: "layers" | "lanes";
+    kind: "layers" | "lanes" | "legend";
     left: number;
     bottom: number;
   } | null>(null);
@@ -260,7 +259,7 @@ export function TimelineView() {
     placed.push({ event, row });
   }
   const bandH = Math.max(rows.length, 1) * 24 + 18;
-  const fixed = 8 + (markerRow ? 40 : 6) + 6 + bandH + 6 + 48;
+  const fixed = 8 + (markerRow ? 40 : 6) + 6 + bandH + 6 + 52;
   const LANE_H = Math.max(
     64,
     Math.min(80, Math.floor((available - fixed) / Math.max(visible.length, 1))),
@@ -269,7 +268,7 @@ export function TimelineView() {
   const markerTop = top + visible.length * LANE_H + 6;
   const bandTop = markerTop + (markerRow ? 34 : 0) + 6;
   const rulerTop = bandTop + bandH + 6;
-  const height = rulerTop + 48;
+  const height = rulerTop + 52;
   const mainIndex = visible.findIndex((lane) => lane.isMain);
 
   const openGallery = async (laneId: string, start: string, end: string, label: string) => {
@@ -613,26 +612,45 @@ export function TimelineView() {
       strokeWidth={2}
     />,
   );
-  for (let d = Math.floor(center - halfDays - 2); d <= Math.ceil(center + halfDays + 2); d++) {
+  // Two label rows keep a month or year from landing on a day or month label:
+  // the minor row names days (day zoom) or months, and the major row names
+  // months (day zoom) or years. A label that would touch the one before it in
+  // its row is left out.
+  const MINOR_Y = rulerTop + 28;
+  const MAJOR_Y = rulerTop + 44;
+  const labelWidth = (text: string) => text.length * 8 + 6;
+  const rowEnd = { minor: -Infinity, major: -Infinity };
+  const firstDay = Math.floor(center - halfDays - 2);
+  const lastDay = Math.ceil(center + halfDays + 2);
+  const leftEdge = LABEL_W + 3;
+  // The period at the left edge is named there, so a scrolled view always says which month or year it shows.
+  const leftDate = new Date(Math.ceil(center - halfDays) * 86_400_000);
+  const sticky =
+    zoom === "day"
+      ? `${MONTHS[leftDate.getUTCMonth()]} ${leftDate.getUTCFullYear()}`
+      : String(leftDate.getUTCFullYear());
+  const rulerLabels: { row: "minor" | "major"; x: number; text: string; key: string }[] = [];
+  for (let d = firstDay; d <= lastDay; d++) {
     const date = new Date(d * 86_400_000);
     const first = date.getUTCDate() === 1;
+    const january = date.getUTCMonth() === 0;
     let tick = 0;
-    let text: string | null = null;
+    let minor: string | null = null;
+    let major: string | null = null;
     if (zoom === "day") {
       tick = first ? 12 : 5;
-      if (ppd >= 20 && date.getUTCDay() === 1)
-        text = `${MONTHS[date.getUTCMonth()]} ${date.getUTCDate()}`;
-      if (first) text = monthText(dayOfNumber(d));
+      if (ppd >= 20) minor = String(date.getUTCDate());
+      if (first) major = monthText(dayOfNumber(d));
     } else if (zoom === "month") {
       if (first) {
-        tick = 12;
-        text =
-          date.getUTCMonth() === 0 ? String(date.getUTCFullYear()) : MONTHS[date.getUTCMonth()]!;
+        tick = january ? 14 : 10;
+        minor = MONTHS[date.getUTCMonth()]!;
+        if (january) major = String(date.getUTCFullYear());
       } else if (date.getUTCDay() === 1) tick = 4;
     } else if (first) {
-      tick = date.getUTCMonth() === 0 ? 14 : 6;
-      if (date.getUTCMonth() === 0) text = String(date.getUTCFullYear());
-      else if (date.getUTCMonth() % 3 === 0) text = MONTHS[date.getUTCMonth()]!;
+      tick = january ? 14 : 6;
+      if (date.getUTCMonth() % 3 === 0) minor = MONTHS[date.getUTCMonth()]!;
+      if (january) major = String(date.getUTCFullYear());
     }
     if (!tick) continue;
     const tx = x(d);
@@ -647,13 +665,28 @@ export function TimelineView() {
         strokeWidth={1}
       />,
     );
-    if (text) {
-      content.push(
-        <text key={`label-${d}`} className="t-sub" x={tx + 3} y={rulerTop + 34}>
-          {text}
-        </text>,
-      );
-    }
+    if (tx < leftEdge) continue;
+    if (minor) rulerLabels.push({ row: "minor", x: tx + 3, text: minor, key: `minor-${d}` });
+    if (major) rulerLabels.push({ row: "major", x: tx + 3, text: major, key: `major-${d}` });
+  }
+  // The sticky label gives way to a real boundary label that would touch it.
+  const firstMajor = rulerLabels.find((label) => label.row === "major");
+  if (!firstMajor || firstMajor.x > leftEdge + labelWidth(sticky)) {
+    rulerLabels.unshift({ row: "major", x: leftEdge, text: sticky, key: "major-sticky" });
+  }
+  for (const label of rulerLabels) {
+    if (label.x < rowEnd[label.row] + 4) continue;
+    rowEnd[label.row] = label.x + labelWidth(label.text);
+    content.push(
+      <text
+        key={label.key}
+        className={label.row === "major" ? "t-lane" : "t-sub"}
+        x={label.x}
+        y={label.row === "major" ? MAJOR_Y : MINOR_Y}
+      >
+        {label.text}
+      </text>,
+    );
   }
   const cx = x(center);
   content.push(
@@ -832,12 +865,17 @@ export function TimelineView() {
   );
 
   const openPopover =
-    (kind: "layers" | "lanes") => (event: React.MouseEvent<HTMLButtonElement>) => {
+    (kind: "layers" | "lanes" | "legend") => (event: React.MouseEvent<HTMLButtonElement>) => {
       const rect = event.currentTarget.getBoundingClientRect();
       setPopover(
         popover?.kind === kind
           ? null
-          : { kind, left: rect.left, bottom: window.innerHeight - rect.top + 8 },
+          : {
+              kind,
+              // Kept inside the window, since a button near the right edge would push it off.
+              left: Math.max(8, Math.min(rect.left, window.innerWidth - 320)),
+              bottom: window.innerHeight - rect.top + 8,
+            },
       );
     };
   const hiddenCount = prefs.hidden.filter((id) => lanes.some((lane) => lane.id === id)).length;
@@ -875,6 +913,8 @@ export function TimelineView() {
       }
       tray={
         <>
+          <AddMenu />
+          <span className="sep" />
           <span className="label">Zoom</span>
           <div className="seg" role="group" aria-label="Zoom">
             {ZOOM_ORDER.map((z) => (
@@ -917,47 +957,55 @@ export function TimelineView() {
           <button className="btn" type="button" onClick={openPopover("lanes")}>
             Lanes{hiddenCount ? ` (${hiddenCount} hidden)` : ""}
           </button>
-          <span className="sep" />
-          <button
-            className="btn primary"
-            type="button"
-            onClick={() => windows.show(<AddArtifactModal />)}
-          >
-            Add artifact
+          <button className="btn" type="button" onClick={openPopover("legend")}>
+            Legend
           </button>
-          <button className="btn" type="button" onClick={() => windows.show(<EventFormModal />)}>
-            Add event
-          </button>
-          <span className="sep" />
-          <span className="legend">
-            <i style={{ background: "var(--dot-1)" }} />1
-            <i style={{ background: "var(--dot-2)" }} />
-            2-3
-            <i style={{ background: "var(--dot-3)" }} />
-            4-6
-            <i style={{ background: "var(--dot-4)" }} />
-            7+
-            <i className="est" />
-            some dates uncertain
-          </span>
-          <span className="legend">
-            <b className="arw" style={{ color: "var(--event)" }}>
-              ▼
-            </b>
-            one-day event
-            <b className="arw" style={{ color: "var(--marker)" }}>
-              ▼
-            </b>
-            server renamed or new icon
-          </span>
           {popover ? (
             <div
               className="popover"
               style={{ left: popover.left, bottom: popover.bottom }}
               role="dialog"
-              aria-label={popover.kind === "layers" ? "Marker layers" : "Lanes"}
+              aria-label={
+                popover.kind === "layers"
+                  ? "Marker layers"
+                  : popover.kind === "legend"
+                    ? "Legend"
+                    : "Lanes"
+              }
             >
-              {popover.kind === "layers" ? (
+              {popover.kind === "legend" ? (
+                <div className="legend-popover">
+                  <strong style={{ fontSize: 14 }}>Legend</strong>
+                  <span className="legend">
+                    Artifacts per dot: <i style={{ background: "var(--dot-1)" }} />1
+                    <i style={{ background: "var(--dot-2)" }} />
+                    2-3
+                    <i style={{ background: "var(--dot-3)" }} />
+                    4-6
+                    <i style={{ background: "var(--dot-4)" }} />
+                    7+
+                  </span>
+                  <span className="legend">
+                    <i className="est" />a dashed ring: some dates are estimates or file dates
+                  </span>
+                  <span className="legend">
+                    <b className="arw" style={{ color: "var(--event)" }}>
+                      ▼
+                    </b>
+                    a one-day event
+                  </span>
+                  <span className="legend">
+                    <b className="arw" style={{ color: "var(--marker)" }}>
+                      ▼
+                    </b>
+                    a server renamed or given a new icon
+                  </span>
+                  <span className="legend">
+                    Event strips: solid for something that lasted, dashed for something that
+                    happened sometime in that span
+                  </span>
+                </div>
+              ) : popover.kind === "layers" ? (
                 <>
                   <strong style={{ fontSize: 14 }}>Marker layers</strong>
                   {(

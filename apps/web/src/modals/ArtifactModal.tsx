@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, ApiError, type ArtifactDetails } from "../api.js";
+import { api, ApiError, type ArtifactDetails, type EntityView } from "../api.js";
 import { DateField } from "../components/DateField.js";
 import { FullMedia } from "../components/Media.js";
 import { type Picked, Picker } from "../components/Picker.js";
+import { type PickedPlace, PlacePicker } from "../components/PlacePicker.js";
 import { basisText, dayText, shortId } from "../format.js";
 import { characterPath, navigate, viewPath } from "../router.js";
 import { useWindows } from "../Shell.js";
@@ -349,13 +350,51 @@ function EditArtifact(props: {
     ids.map((id) => ({ id, label: artifact.names[id] ?? id.slice(0, 8) }));
   const [characters, setCharacters] = useState<Picked[]>(named(artifact.links.characters));
   const [events, setEvents] = useState<Picked[]>(named(artifact.links.events));
-  const diff = (before: string[], after: Picked[]) => ({
+  const [places, setPlaces] = useState<PickedPlace[]>([
+    ...artifact.links.servers.map((id) => ({ kind: "server" as const, ...named([id])[0]! })),
+    ...artifact.links.channels.map((id) => ({ kind: "channel" as const, ...named([id])[0]! })),
+  ]);
+  // Channel chips say whether each is a group chat or which server it is in.
+  useEffect(() => {
+    let live = true;
+    for (const id of artifact.links.channels) {
+      api<Extract<EntityView, { kind: "channel" }>>(
+        `/api/archives/${archive.archiveId}/entities/channel/${id}`,
+      )
+        .then((channel) => {
+          const detail =
+            channel.channelKind === "group_chat"
+              ? "group chat"
+              : channel.serverId
+                ? (artifact.names[channel.serverId] ?? undefined)
+                : undefined;
+          if (live) {
+            setPlaces((current) =>
+              current.map((place) => (place.id === id ? { ...place, detail } : place)),
+            );
+          }
+        })
+        .catch(() => undefined);
+    }
+    return () => {
+      live = false;
+    };
+  }, [archive.archiveId, artifact]);
+  const diff = (before: string[], after: { id: string }[]) => ({
     add: after.map((p) => p.id).filter((id) => !before.includes(id)),
     remove: before.filter((id) => !after.some((p) => p.id === id)),
   });
   const save = () => {
     const c = diff(artifact.links.characters, characters);
     const e = diff(artifact.links.events, events);
+    const sv = diff(
+      artifact.links.servers,
+      places.filter((place) => place.kind === "server"),
+    );
+    const ch = diff(
+      artifact.links.channels,
+      places.filter((place) => place.kind === "channel"),
+    );
     const patch: Record<string, unknown> = {};
     if (description !== artifact.description) patch.description = description;
     if (exact !== (artifact.dates.exact?.date.originalText ?? ""))
@@ -366,9 +405,17 @@ function EditArtifact(props: {
     ) {
       patch.estimatedDate = estimate.trim() ? { day: estimate, reason } : null;
     }
-    if (c.add.length || e.add.length) patch.addLinks = { characters: c.add, events: e.add };
-    if (c.remove.length || e.remove.length)
-      patch.removeLinks = { characters: c.remove, events: e.remove };
+    if (c.add.length || e.add.length || sv.add.length || ch.add.length) {
+      patch.addLinks = { characters: c.add, events: e.add, servers: sv.add, channels: ch.add };
+    }
+    if (c.remove.length || e.remove.length || sv.remove.length || ch.remove.length) {
+      patch.removeLinks = {
+        characters: c.remove,
+        events: e.remove,
+        servers: sv.remove,
+        channels: ch.remove,
+      };
+    }
     props.onSave(patch);
   };
   return (
@@ -389,6 +436,13 @@ function EditArtifact(props: {
         label="Characters"
         value={characters}
         onChange={setCharacters}
+        allowCreate
+      />
+      <PlacePicker
+        archiveId={archive.archiveId}
+        label="Where it is from"
+        value={places}
+        onChange={setPlaces}
       />
       <Picker
         archiveId={archive.archiveId}
@@ -396,6 +450,7 @@ function EditArtifact(props: {
         label="Events"
         value={events}
         onChange={setEvents}
+        allowCreate
       />
       <DateField
         archiveId={archive.archiveId}

@@ -39,6 +39,18 @@ Set the printed `member` or `owner` value as the `archivist_session` cookie for 
 
 The timeline's lane order, hidden lanes, zoom, and marker layers, the album's sort and tile size, and the last archive and timeline position are kept in the browser's storage. They change only that viewer's view and are not archive data.
 
+## Adding Records
+
+Every view's tray starts with a round add button. Its menu adds an artifact, an event, a character, a server, a group chat, or a missing-media request. On a place's page a new artifact starts out from that place or the channel being shown, and on a character's page it starts out with that character.
+
+An artifact chooses where it is from: a server, a channel in one, or a group chat. The timeline puts it in that server's or group chat's lane. Without a place it stays in Unassigned.
+
+The character, event, and place fields in the artifact, event, and request forms accept names that are not in the archive yet. Typing names separated by commas picks each record whose name matches exactly and creates the rest. A new character, server, or group chat needs only its name. A new channel is added to a server already chosen in the field. A new event asks for the day it happened, and its title is also its description until someone changes it. Each new character, server, or event gets a low-priority card in the board's Needed column, labeled "To fill in", which is marked done once it is filled in. A misspelled duplicate is merged on the character's page. `src/components/quick-create.ts` does this. Filters and merges never create records.
+
+## Timeline
+
+Drag or scroll to move, and hold Ctrl while scrolling to zoom. The ruler names days at day zoom and months otherwise, with months or years on a second row. The period at the left edge is always named, so a scrolled view shows which month or year it is in. The tray's Legend button explains the dot shades, dashed outlines, arrows, and event strips.
+
 ## Places
 
 A server's page shows its artifacts oldest first, with channel filters and a channel-lane view. Group chats show the same historical list. Channel lanes group artifacts by day, week, or month to keep dots apart. They draw up to the first 2,000 matching artifacts and state when that limit is reached. The paged list retains access to every matching artifact.

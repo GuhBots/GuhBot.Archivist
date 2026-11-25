@@ -394,6 +394,7 @@ export function EventFormModal(props: { event?: Loaded }) {
           label="Characters"
           value={characters}
           onChange={setCharacters}
+          allowCreate
         />
         <div className="grid2">
           <Picker
@@ -402,6 +403,7 @@ export function EventFormModal(props: { event?: Loaded }) {
             label="Servers"
             value={servers}
             onChange={setServers}
+            allowCreate
           />
           <Picker
             archiveId={archive.archiveId}

@@ -14,6 +14,7 @@ import { useWindows } from "../Shell.js";
 import { filterCount, filterQuery, loadLocal, saveLocal, useArchive } from "../state.js";
 import { ErrorNote } from "../ui.js";
 import { graphLayout, type Link, linkWeight } from "./graph-layout.js";
+import { AddMenu } from "../components/AddMenu.js";
 import { ViewFrame } from "./ViewFrame.js";
 
 /**
@@ -268,6 +269,8 @@ export function GraphView() {
 
   const tray = (
     <>
+      <AddMenu />
+      <span className="sep" />
       <span className="label">Layers</span>
       {LAYERS.map(([layer, label]) => (
         <button
@@ -347,7 +350,10 @@ export function GraphView() {
           <div className="empty">Drawing the graph…</div>
         )
       ) : !nodes.length ? (
-        <div className="empty">No characters yet.</div>
+        <div className="empty">
+          No characters yet. Add them with the + button, or type their names when adding an
+          artifact.
+        </div>
       ) : (
         <div className="graph-layout">
           <div style={{ padding: 8 }}>
@@ -574,6 +580,13 @@ export function GraphView() {
               </>
             ) : (
               <>
+                {totals.size === 0 ? (
+                  <p className="hint" style={{ marginTop: 0 }}>
+                    No connections to draw yet. Lines appear when two characters share an artifact
+                    or event, one introduced the other, or both were in a server at the same time.
+                    Turn on more layers in the tray, or add characters to artifacts.
+                  </p>
+                ) : null}
                 <h3>How to read this</h3>
                 <ul>
                   <li>

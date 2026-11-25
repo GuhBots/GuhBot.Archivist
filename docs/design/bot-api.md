@@ -74,7 +74,7 @@ Every error is `{code, message, details}`. `message` is safe to show the contrib
 | `GET /api/archives/<id>/lookup/characters?names=` | Resolves a comma-separated list of names, aliases, or `Name (shortid)` tags to `{characters: [{id, knownName}]}`. Refuses unknown or ambiguous names with a message naming them |
 | `GET /api/archives/<id>/lookup/events?names=` | Resolves event titles or short IDs to `{events: [{id, title}]}` |
 | `GET /api/archives/<id>/lookup/character-suggestions?typed=` | `{suggestions: [{name, value}]}` completing the last name in a comma-separated list, at most 25 |
-| `GET /api/archives/<id>/lookup/search?kind=&q=&limit=` | `{items: [{id, label}]}` for `artifact`, `character`, `account`, `server`, `channel`, `event`, or `request`. `limit` from 1 to 100, default 25 |
+| `GET /api/archives/<id>/lookup/search?kind=&q=&limit=` | `{items: [{id, label}]}` for `artifact`, `character`, `account`, `server`, `channel`, `event`, or `request`. Channels also have `detail`: `group chat`, `direct message`, or their server's name. `limit` from 1 to 100, default 25 |
 | `GET /api/archives/<id>/lookup/names?character=&event=` | Display names by ID, repeating each parameter: `{characters: {id: name}, events: {id: title}}`. Unknown IDs map to `null` |
 | `GET /api/archives/<id>/date-preview?text=` | How typed text will be read with the contributor's preferences: `{value, archiveDay, assumedZone, display}`. `display` is `{local, zone, offset}` for a date and time, for the confirmation Discord shows |
 

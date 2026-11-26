@@ -110,7 +110,7 @@ Every error is `{code, message, details}`. `message` is safe to show the contrib
 | `GET /api/archives/<id>/events/<eventId>/deletion-check` | As for entities. A missing-media request that uses the event as its date blocks deletion |
 | `DELETE /api/archives/<id>/events/<eventId>?expectedVersion=` | Permanent. `204` |
 | `POST /api/archives/<id>/requests` | `{description, characters: [ids], constraint: {kind, day?, start?, end?, eventId?}, events?, researchNotes?}` |
-| `GET`, `PATCH /api/archives/<id>/requests/<requestId>` | Read, or change with `{expectedVersion, description?, constraint?, researchNotes?, addCharacters?, removeCharacters?, addEvents?, removeEvents?}`. Moving between buckets is website-only |
+| `GET`, `PATCH /api/archives/<id>/requests/<requestId>` | Read, or change with `{expectedVersion, description?, constraint?, researchNotes?, addCharacters?, removeCharacters?, addEvents?, removeEvents?}`. A request's `status` is `needed` or `unrecoverable`. Moving between buckets is website-only, and a request found there is deleted, so later reads answer `404` |
 
 ### The Logs Channel
 

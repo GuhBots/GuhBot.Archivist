@@ -78,7 +78,7 @@ function remove(id: string): MutationInput<void> {
 /** Runs a mutation up to and including its database commit, then stops as a crash would. */
 function crashAfterCommit(store: ArchiveStore, input: MutationInput<void>): void {
   writeJournal(store, planJournal(store, input));
-  store.db.transaction(() => input.apply(store.db))();
+  store.db.transaction(() => input.apply(store.db, { removeRecords: () => undefined }))();
 }
 
 function labelOf(store: ArchiveStore, id: string): unknown {
@@ -113,8 +113,8 @@ test("a failed database change leaves the archive and log untouched", (t) => {
   assert.throws(() =>
     commitMutation(store, {
       ...input,
-      apply(db) {
-        input.apply(db);
+      apply(db, during) {
+        input.apply(db, during);
         throw new ArchivistError("stale_version", "Someone else edited this.");
       },
     }),
@@ -182,6 +182,40 @@ test("deleting a record removes its own log lines and keeps other records' lines
 
   assert.equal(labelOf(store, "s1"), undefined);
   assert.deepEqual(logIds(store), [`s2:{"label":{"old":"Two","new":"Two B"}}`]);
+});
+
+test("records a change deletes along the way lose their log lines, unless it fails", (t) => {
+  const store = openStore(t);
+  insertServer(store, "s1", "One");
+  insertServer(store, "s2", "Two");
+  commitMutation(store, rename(store, "s1", "One B"));
+  commitMutation(store, rename(store, "s2", "Two B"));
+  // Renaming s2 also deletes s1, which the caller could not name beforehand.
+  const cascade = (fail: boolean): MutationInput<void> => {
+    const input = rename(store, "s2", "Two C");
+    return {
+      ...input,
+      apply(db, during) {
+        input.apply(db, during);
+        db.prepare("DELETE FROM servers WHERE id = 's1'").run();
+        during.removeRecords([{ record: "server", id: "s1" }]);
+        if (fail) throw new ArchivistError("stale_version", "Someone else edited this.");
+      },
+    };
+  };
+
+  assert.throws(() => commitMutation(store, cascade(true)));
+  assert.equal(labelOf(store, "s1"), "One B");
+  assert.equal(logIds(store).length, 2);
+  assert.equal(existsSync(store.journalFile), false);
+
+  commitMutation(store, cascade(false));
+  assert.equal(labelOf(store, "s1"), undefined);
+  assert.deepEqual(logIds(store), [
+    `s2:{"label":{"old":"Two","new":"Two B"}}`,
+    `s2:{"label":{"old":"Two B","new":"Two C"}}`,
+  ]);
+  assert.equal(existsSync(store.journalFile), false);
 });
 
 for (const point of [

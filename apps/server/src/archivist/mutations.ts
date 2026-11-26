@@ -8,6 +8,7 @@ import {
   type LogEntry,
   readLog,
   type RecordRef,
+  refKey,
   removeRecordLines,
   syncDirectory,
   writeFileAtomic,
@@ -91,10 +92,19 @@ export interface Journal {
   newFiles: string[];
 }
 
+/** What a mutation's database change can add to the journal while it runs. */
+export interface DuringApply {
+  /**
+   * Removes the log lines of records the change deleted that the caller could
+   * not name beforehand, such as research cards whose gap it filled.
+   */
+  removeRecords(records: readonly RecordRef[]): void;
+}
+
 export interface MutationInput<T> {
   expectations: Expectation[];
   /** Makes the database change. Runs inside one transaction. Throwing cancels the mutation. */
-  apply(db: Database.Database): T;
+  apply(db: Database.Database, during: DuringApply): T;
   append?: LogEntry[];
   /** Records whose own log lines are removed, because they were permanently deleted. */
   removeRecords?: RecordRef[];
@@ -265,13 +275,36 @@ export function commitMutation<T>(
   hooks: MutationHooks = store.hooks ?? {},
 ): T {
   recoverPendingMutation(store, hooks);
-  const journal = planJournal(store, input);
+  let journal = planJournal(store, input);
   writeJournal(store, journal);
 
   let result: T;
   try {
     input.placeFiles?.();
-    result = store.db.transaction(() => input.apply(store.db))();
+    result = store.db.transaction(() => {
+      const named = new Set((input.removeRecords ?? []).map(refKey));
+      const found: RecordRef[] = [];
+      const value = input.apply(store.db, {
+        removeRecords(records) {
+          for (const record of records) {
+            if (named.has(refKey(record))) continue;
+            named.add(refKey(record));
+            found.push(record);
+          }
+        },
+      });
+      if (found.length > 0) {
+        // The journal is rewritten before the transaction commits, so a crash
+        // before the commit discards the attempt and one after it finishes
+        // the log with these removals, as for removals named beforehand.
+        journal = planJournal(store, {
+          ...input,
+          removeRecords: [...(input.removeRecords ?? []), ...found],
+        });
+        writeJournal(store, journal);
+      }
+      return value;
+    })();
   } catch (error) {
     removeNewFiles(store, journal);
     deleteJournal(store);

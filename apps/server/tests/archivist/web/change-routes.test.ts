@@ -199,13 +199,28 @@ test("events, requests, and the board change through the website with the same r
     media,
     source: { provider: "discord_attachment", key: "900000000000000001" },
   }).artifact;
+  // A request that is found is deleted, not moved to a Resolved bucket.
   const resolved = await call("POST", `/requests/${photos.body.id}/status`, {
     expectedVersion: 2,
     status: "resolved",
-    foundArtifacts: [found.id],
   });
-  assert.equal(resolved.body.status, "resolved");
-  assert.deepEqual(resolved.body.foundArtifacts, [found.id]);
+  assert.equal(resolved.status, 400);
+  const reopened = await call("POST", `/requests/${photos.body.id}/status`, {
+    expectedVersion: 2,
+    status: "needed",
+  });
+  assert.equal(reopened.body.status, "needed");
+  const edited = await call("PATCH", `/requests/${photos.body.id}`, {
+    expectedVersion: 3,
+    description: "Photos from the first meetup at the park",
+    constraint: { kind: "approximate_day", day: "03/08/2019" },
+    priority: "high",
+  });
+  assert.equal(edited.status, 200, JSON.stringify(edited.body));
+  assert.equal(edited.body.wording, "Around Aug 3, 2019");
+  assert.equal((await call("DELETE", `/requests/${photos.body.id}?expectedVersion=4`)).status, 204);
+  assert.equal((await call("GET", `/requests/${photos.body.id}`)).status, 404);
+  assert.equal((await call("GET", "/requests?status=resolved")).status, 400);
 
   // The undated artifact is on the board by itself; a manual flag needs a reason.
   const noFlagReason = await call("POST", "/backlog/flags", {
@@ -219,19 +234,48 @@ test("events, requests, and the board change through the website with the same r
     reason: "Clock was wrong",
   });
   assert.equal(flag.status, 201);
-  const done = await call("PATCH", `/backlog/${flag.body.id}`, {
+  const notes = await call("PATCH", `/backlog/${flag.body.id}`, {
     expectedVersion: 1,
+    priority: "high",
+    reason: "The camera clock was a year behind",
+  });
+  assert.equal(notes.body.priority, "high");
+  assert.equal(notes.body.reason, "The camera clock was a year behind");
+  const markedDone = await call("PATCH", `/backlog/${flag.body.id}`, {
+    expectedVersion: 2,
     status: "resolved",
   });
-  assert.equal(done.body.status, "resolved");
+  assert.equal(markedDone.status, 400);
+  assert.equal((await call("DELETE", `/backlog/${flag.body.id}?expectedVersion=2`)).status, 204);
+  const board = await call("GET", "/backlog");
+  assert.equal(
+    board.body.items.some((card: { id: string }) => card.id === flag.body.id),
+    false,
+  );
+  const undated = board.body.items.find(
+    (card: { kind: string; subject: { id: string } }) =>
+      card.kind === "undated" && card.subject.id === found.id,
+  );
+  assert.ok(undated);
+  // A derived card clears only when the information is added.
+  assert.equal(
+    (await call("DELETE", `/backlog/${undated.id}?expectedVersion=${undated.version}`)).status,
+    400,
+  );
 
-  const edited = await call("PATCH", `/artifacts/${found.id}`, {
+  const dated = await call("PATCH", `/artifacts/${found.id}`, {
     expectedVersion: 1,
     description: "The first meetup",
     exactDate: "2019-08-03",
   });
-  assert.equal(edited.status, 200);
-  assert.equal(edited.body.dates.selected.basis, "exact");
+  assert.equal(dated.status, 200);
+  assert.equal(dated.body.dates.selected.basis, "exact");
+  assert.equal(
+    (await call("GET", "/backlog")).body.items.some(
+      (card: { id: string }) => card.id === undated.id,
+    ),
+    false,
+  );
   assert.equal(
     (await call("DELETE", `/artifacts/${found.id}`, { expectedVersion: 1 })).status,
     409,
@@ -240,8 +284,6 @@ test("events, requests, and the board change through the website with the same r
     (await call("DELETE", `/artifacts/${found.id}`, { expectedVersion: 2 })).status,
     204,
   );
-  // Deleting the found artifact sends the request back to Needed.
-  assert.equal((await call("GET", `/requests/${photos.body.id}`)).body.status, "needed");
 });
 
 test("changes need the website's origin and a JSON object", async (t) => {

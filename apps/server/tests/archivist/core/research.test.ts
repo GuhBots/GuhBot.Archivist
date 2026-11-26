@@ -8,7 +8,12 @@ import {
   deleteArtifact,
   updateArtifact,
 } from "../../../src/archivist/artifacts.js";
-import { flagForResearch, listGapCards, updateGapCard } from "../../../src/archivist/board.js";
+import {
+  deleteGapCard,
+  flagForResearch,
+  listGapCards,
+  updateGapCard,
+} from "../../../src/archivist/board.js";
 import type { ArchivistContext } from "../../../src/archivist/context.js";
 import { parseLog } from "../../../src/archivist/edit-log.js";
 import {
@@ -31,7 +36,13 @@ import { addMember } from "../../../src/archivist/members.js";
 import { closeMetadataReader } from "../../../src/archivist/metadata.js";
 import { PALETTE } from "../../../src/archivist/palette.js";
 import { setDateOrder } from "../../../src/archivist/preferences.js";
-import { createRequest, getRequest, updateRequest } from "../../../src/archivist/requests.js";
+import {
+  createRequest,
+  deleteRequest,
+  getRequest,
+  listRequests,
+  updateRequest,
+} from "../../../src/archivist/requests.js";
 import { makeArchivist, MEMBER, OWNER } from "../helpers/context.js";
 import { closeFixtureWriter, writeImage } from "../helpers/media.js";
 
@@ -167,7 +178,7 @@ test("events take a single day, a duration, or an occurrence window", (t) => {
   );
 });
 
-test("an event without evidence gets a card that clears and reopens with its links", async (t) => {
+test("an event without evidence gets a card that is deleted and returns with its links", async (t) => {
   const { context, archiveId, log } = setup(t);
   const outage = createEvent(context, MEMBER, {
     archiveId,
@@ -203,14 +214,27 @@ test("an event without evidence gets a card that clears and reopens with its lin
     fails("invalid_input"),
   );
 
-  // One artifact supports both events.
+  // A note on a derived card is logged, and goes with the card once the gap is filled.
+  updateGapCard(context, MEMBER, {
+    archiveId,
+    id: card.id,
+    expectedVersion: 1,
+    reason: "Check the status page archive.",
+  });
+  assert.equal(
+    log().some((entry) => entry.id === card.id),
+    true,
+  );
+
+  // One artifact supports both events, so both cards are deleted with their log lines.
   const photo = await artifact(context, archiveId, { events: [outage.id, party.id] });
   assert.deepEqual(getEvent(context, MEMBER, { archiveId, id: outage.id }).supportingArtifacts, [
     photo.id,
   ]);
-  assert.deepEqual(
-    cards(context, archiveId).sort(),
-    [`missing_evidence:resolved:${outage.id}`, `missing_evidence:resolved:${party.id}`].sort(),
+  assert.deepEqual(cards(context, archiveId), []);
+  assert.equal(
+    log().some((entry) => entry.id === card.id),
+    false,
   );
   updateArtifact(context, MEMBER, {
     archiveId,
@@ -218,11 +242,12 @@ test("an event without evidence gets a card that clears and reopens with its lin
     expectedVersion: 1,
     removeLinks: { events: [outage.id] },
   });
-  const reopened = listGapCards(context, MEMBER, { archiveId, status: "needed" });
+  const returned = listGapCards(context, MEMBER, { archiveId, status: "needed" });
   assert.deepEqual(
-    reopened.map((c) => [c.id, c.subject.id]),
-    [[card.id, outage.id]],
+    returned.map((c) => c.subject.id),
+    [outage.id],
   );
+  assert.notEqual(returned[0]!.id, card.id);
 
   const disputed = updateEvent(context, MEMBER, {
     archiveId,
@@ -348,7 +373,7 @@ test("missing-media requests take each temporal form, and event anchors follow c
   deleteEvent(context, MEMBER, { archiveId, id: season.id, expectedVersion: 2 });
 });
 
-test("requests move between Needed, Unrecoverable, and Resolved", async (t) => {
+test("requests are edited, move between Needed and Unrecoverable, and are deleted once found", (t) => {
   const { context, archiveId, sam, lee, log } = setup(t);
   const request = createRequest(context, MEMBER, {
     archiveId,
@@ -365,41 +390,51 @@ test("requests move between Needed, Unrecoverable, and Resolved", async (t) => {
   assert.throws(() => move(1, { status: "unrecoverable" }), fails("invalid_input"));
   assert.throws(() => move(1, { status: "resolved" }), fails("invalid_input"));
   assert.throws(() => move(1, { removeCharacters: [sam.id] }), fails("invalid_input"));
-  const lost = move(1, {
+
+  // Every field can be edited while it is needed.
+  const edited = move(1, {
+    description: "Recording of the birthday stream",
+    constraint: { kind: "date_range", start: "2020-12-01", end: "2020-12-07" },
+    researchNotes: "Ask Theo or Lee.",
+    priority: "high",
+    addCharacters: [lee.id],
+    removeCharacters: [sam.id],
+  });
+  assert.equal(edited.wording, "Between Dec 1, 2020 and Dec 7, 2020");
+  assert.deepEqual(edited.characters, [lee.id]);
+  assert.equal(edited.priority, "high");
+  assert.equal(edited.researchNotes, "Ask Theo or Lee.");
+
+  const lost = move(2, {
     status: "unrecoverable",
     unrecoverableReason: "The stream was never saved.",
   });
   assert.equal(lost.status, "unrecoverable");
-
-  const found = await artifact(context, archiveId);
-  const resolved = move(2, {
-    status: "resolved",
-    foundArtifacts: [found.id],
-    addCharacters: [lee.id],
-  });
-  assert.equal(resolved.status, "resolved");
-  assert.equal(resolved.unrecoverableReason, null);
-  assert.deepEqual(resolved.foundArtifacts, [found.id]);
-  assert.equal(resolved.wording, "Around Dec 5, 2020");
-  assert.throws(
-    () => move(3, { status: "unrecoverable", unrecoverableReason: "x" }),
-    fails("invalid_input"),
-  );
-  assert.throws(() => move(2, { priority: "high" }), fails("stale_version"));
-
+  assert.throws(() => move(2, { priority: "low" }), fails("stale_version"));
   const reopened = move(3, { status: "needed" });
   assert.equal(reopened.status, "needed");
-  assert.deepEqual(reopened.foundArtifacts, []);
-  assert.equal(reopened.description, request.description);
+  assert.equal(reopened.unrecoverableReason, null);
+  assert.equal(reopened.description, "Recording of the birthday stream");
   assert.deepEqual(log().at(-1)?.changes, {
-    status: { old: "resolved", new: "needed" },
-    foundArtifacts: { old: [found.id], new: [] },
+    status: { old: "unrecoverable", new: "needed" },
+    unrecoverableReason: { old: "The stream was never saved.", new: null },
   });
 
-  // Deleting the only found artifact of a resolved request reopens it.
-  move(4, { status: "resolved", foundArtifacts: [found.id] });
-  deleteArtifact(context, MEMBER, { archiveId, id: found.id, expectedVersion: 1 });
-  assert.equal(getRequest(context, MEMBER, { archiveId, id: request.id }).status, "needed");
+  // Found: the request is deleted with its own log lines, and nothing records it.
+  assert.throws(
+    () => deleteRequest(context, MEMBER, { archiveId, id: request.id, expectedVersion: 3 }),
+    fails("stale_version"),
+  );
+  deleteRequest(context, MEMBER, { archiveId, id: request.id, expectedVersion: 4 });
+  assert.deepEqual(listRequests(context, MEMBER, { archiveId }), []);
+  assert.throws(
+    () => getRequest(context, MEMBER, { archiveId, id: request.id }),
+    fails("not_found"),
+  );
+  assert.equal(
+    log().some((entry) => entry.id === request.id),
+    false,
+  );
 });
 
 test("derived cards follow the data, and manual flags need a reason", async (t) => {
@@ -439,7 +474,10 @@ test("derived cards follow the data, and manual flags need a reason", async (t) 
     ].sort(),
   );
 
-  // Filling a gap resolves its card, and a returning gap reopens the same card.
+  // Filling a gap deletes its card, and a returning gap gets a new one.
+  const accountCard = () =>
+    listGapCards(context, MEMBER, { archiveId }).find((card) => card.kind === "account_character");
+  const firstCard = accountCard()!.id;
   const linked = updateEntity(context, MEMBER, {
     archiveId,
     kind: "account",
@@ -447,10 +485,7 @@ test("derived cards follow the data, and manual flags need a reason", async (t) 
     expectedVersion: 1,
     characterId: sam.id,
   });
-  const accountCard = () =>
-    listGapCards(context, MEMBER, { archiveId }).find((card) => card.kind === "account_character")!;
-  assert.equal(accountCard().status, "resolved");
-  const cardId = accountCard().id;
+  assert.equal(accountCard(), undefined);
   updateEntity(context, MEMBER, {
     archiveId,
     kind: "account",
@@ -458,12 +493,49 @@ test("derived cards follow the data, and manual flags need a reason", async (t) 
     expectedVersion: linked.version,
     characterId: null,
   });
-  assert.equal(accountCard().status, "needed");
-  assert.equal(accountCard().id, cardId);
+  const cardId = accountCard()!.id;
+  assert.notEqual(cardId, firstCard);
+  assert.equal(accountCard()!.status, "needed");
+
+  // A derived card's priority and notes can be edited, but it cannot be cleared by hand.
+  const raised = updateGapCard(context, MEMBER, {
+    archiveId,
+    id: cardId,
+    expectedVersion: 1,
+    priority: "critical",
+    reason: "Probably Lee's old account.",
+  });
+  assert.equal(raised.priority, "critical");
+  assert.equal(raised.reason, "Probably Lee's old account.");
+  assert.throws(
+    () =>
+      updateGapCard(context, MEMBER, {
+        archiveId,
+        id: cardId,
+        expectedVersion: 2,
+        priority: "urgent",
+      }),
+    fails("invalid_input"),
+  );
+  assert.throws(
+    () => deleteGapCard(context, MEMBER, { archiveId, id: cardId, expectedVersion: 2 }),
+    fails("invalid_input"),
+  );
+  assert.throws(
+    () =>
+      updateGapCard(context, MEMBER, {
+        archiveId,
+        id: cardId,
+        expectedVersion: 2,
+        status: "unrecoverable",
+        reason: "",
+      }),
+    fails("invalid_input"),
+  );
   const lost = updateGapCard(context, MEMBER, {
     archiveId,
     id: cardId,
-    expectedVersion: accountCard().version,
+    expectedVersion: 2,
     status: "unrecoverable",
     reason: "Nobody remembers who this was.",
   });
@@ -506,20 +578,40 @@ test("derived cards follow the data, and manual flags need a reason", async (t) 
     reason: "Where did Sam live in 2020?",
   });
   assert.equal(custom.priority, "low");
-  const done = updateGapCard(context, MEMBER, {
-    archiveId,
-    id: flag.id,
-    expectedVersion: 1,
-    status: "resolved",
-  });
-  assert.equal(done.status, "resolved");
+
+  // A manual card keeps a reason, and is deleted once it is done.
+  assert.throws(
+    () =>
+      updateGapCard(context, MEMBER, { archiveId, id: custom.id, expectedVersion: 1, reason: "" }),
+    fails("invalid_input"),
+  );
+  assert.throws(
+    () =>
+      updateGapCard(context, MEMBER, {
+        archiveId,
+        id: flag.id,
+        expectedVersion: 1,
+        status: "resolved",
+      }),
+    fails("invalid_input"),
+  );
+  deleteGapCard(context, MEMBER, { archiveId, id: custom.id, expectedVersion: 1 });
+  assert.equal(
+    log().some((entry) => entry.id === custom.id),
+    false,
+  );
+  assert.equal(
+    listGapCards(context, MEMBER, { archiveId }).some((card) => card.id === custom.id),
+    false,
+  );
+  deleteGapCard(context, MEMBER, { archiveId, id: flag.id, expectedVersion: 1 });
   const again = flagForResearch(context, MEMBER, {
     archiveId,
     kind: "date_research",
     subjectId: dated.id,
     reason: "Still wrong.",
   });
-  assert.equal(again.id, flag.id);
+  assert.notEqual(again.id, flag.id);
   assert.equal(again.status, "needed");
 
   // Deleting a record removes its cards and their log lines.
@@ -529,7 +621,7 @@ test("derived cards follow the data, and manual flags need a reason", async (t) 
     false,
   );
   assert.equal(
-    log().some((entry) => entry.id === flag.id),
+    log().some((entry) => entry.id === again.id),
     false,
   );
   deleteEntity(context, MEMBER, { archiveId, kind: "account", id: account.id, expectedVersion: 3 });
@@ -546,4 +638,52 @@ test("derived cards follow the data, and manual flags need a reason", async (t) 
     ].sort(),
   );
   createServer(restarted, MEMBER, { archiveId, label: "Hangout" });
+});
+
+test("opening an archive deletes what earlier versions kept as resolved, with its log lines", async (t) => {
+  const { archivist, context, archiveId, db, log, sam } = setup(t);
+  const request = (description: string) =>
+    createRequest(context, MEMBER, {
+      archiveId,
+      description,
+      characters: [sam.id],
+      constraint: { kind: "approximate_day", day: "2020-12-05" },
+    });
+  const found = request("Photos from the meetup");
+  const missing = request("Recording of the stream");
+  const flag = flagForResearch(context, MEMBER, {
+    archiveId,
+    kind: "custom",
+    subjectKind: "character",
+    subjectId: sam.id,
+    reason: "Where did Sam live?",
+  });
+  const undated = await artifact(context, archiveId, { dated: false });
+  const undatedCard = listGapCards(context, MEMBER, { archiveId }).find(
+    (card) => card.subject.id === undated.id,
+  )!;
+  // As an earlier version left them: a resolved request, a manual card marked
+  // done, and a derived card whose gap came back while it was resolved.
+  db().prepare("UPDATE research_requests SET status = 'resolved' WHERE id = ?").run(found.id);
+  db()
+    .prepare("UPDATE gap_cards SET status = 'resolved' WHERE id IN (?, ?)")
+    .run(flag.id, undatedCard.id);
+
+  const restarted = archivist.restart();
+  assert.deepEqual(
+    listRequests(restarted, MEMBER, { archiveId }).map((r) => r.id),
+    [missing.id],
+  );
+  const left = listGapCards(restarted, MEMBER, { archiveId });
+  assert.deepEqual(
+    left.map((card) => `${card.kind}:${card.status}:${card.subject.id}`),
+    [`undated:needed:${undated.id}`],
+  );
+  assert.notEqual(left[0]!.id, undatedCard.id);
+  assert.deepEqual(
+    log()
+      .map((entry) => entry.id)
+      .filter((id) => [found.id, flag.id, missing.id].includes(id)),
+    [missing.id],
+  );
 });

@@ -350,12 +350,12 @@ export function createAccount(
   const { id, now, by } = stamp(context, actor);
   commitMutation(store, {
     expectations: [{ table: "accounts", id, state: "present" }],
-    apply(db) {
+    apply(db, during) {
       db.prepare(
         `INSERT INTO accounts (id, created_at, created_by, updated_at, discord_id, kind, label, character_id)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(id, now, by, now, accountDiscordId, kind, label, characterId);
-      syncGaps(db, now, by);
+      syncGaps(db, now, by, during);
     },
     append: [
       logEntry(context, actor, "account", id, {
@@ -430,10 +430,10 @@ export function deleteEntity(
   const now = timestamp(context.now());
   commitMutation(store, {
     expectations: [{ table, id, state: "absent" }],
-    apply(db) {
+    apply(db, during) {
       db.prepare(`DELETE FROM ${table} WHERE id = ?`).run(id);
       pruneDates(db);
-      syncGaps(db, now, actor.userId);
+      syncGaps(db, now, actor.userId, during);
     },
     removeRecords: [{ record: kind, id }, ...cards.map((card) => ({ record: "gap", id: card }))],
   });
@@ -623,13 +623,13 @@ export function updateEntity(
       .join(", ");
     commitMutation(store, {
       expectations: [{ table, id, version: row.version + 1 }],
-      apply(target) {
+      apply(target, during) {
         target
           .prepare(
             `UPDATE ${table} SET ${set}, version = version + 1, updated_at = @now WHERE id = @id AND version = @version`,
           )
           .run({ ...after, now, id, version: row.version });
-        syncGaps(target, now, actor.userId);
+        syncGaps(target, now, actor.userId, during);
       },
       append: [logEntry(context, actor, kind, id, changes)],
     });

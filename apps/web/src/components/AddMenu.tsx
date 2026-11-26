@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { AddArtifactModal } from "../modals/AddArtifactModal.js";
 import { EventFormModal } from "../modals/EventModal.js";
 import { NewRecordModal } from "../modals/NewRecordModal.js";
-import { NewRequestModal } from "../modals/NewRequestModal.js";
+import { RequestModal } from "../modals/RequestModal.js";
 import { useWindows } from "../Shell.js";
 import type { Picked } from "./Picker.js";
 import type { PickedPlace } from "./PlacePicker.js";
@@ -40,10 +40,7 @@ export function AddMenu(props: { characters?: Picked[]; places?: PickedPlace[] }
     ["Character", () => windows.show(<NewRecordModal kind="character" />)],
     ["Server", () => windows.show(<NewRecordModal kind="server" />)],
     ["Group chat", () => windows.show(<NewRecordModal kind="group_chat" />)],
-    [
-      "Missing-media request",
-      () => windows.show(<NewRequestModal characters={props.characters} />),
-    ],
+    ["Missing-media request", () => windows.show(<RequestModal characters={props.characters} />)],
   ];
   return (
     <div ref={box} className="add-menu">

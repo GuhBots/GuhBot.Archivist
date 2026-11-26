@@ -1064,7 +1064,7 @@ body.graph-panning .graph-svg {
 /* Board */
 .board {
   display: grid;
-  grid-template-columns: repeat(3, minmax(240px, 1fr));
+  grid-template-columns: repeat(2, minmax(240px, 1fr));
   gap: 12px;
   padding: 16px;
   align-items: start;
@@ -1076,7 +1076,10 @@ body.graph-panning .graph-svg {
   border-radius: 8px;
   padding: 10px;
   display: grid;
+  /* One column as wide as the bucket, so a long title wraps instead of widening its card. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
+  min-width: 0;
 }
 .bucket h2 {
   margin: 0 4px 2px;
@@ -1094,8 +1097,32 @@ body.graph-panning .graph-svg {
   border-radius: 6px;
   padding: 10px;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 6px;
   font-size: 14px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.card:hover {
+  border-color: var(--faint);
+}
+.card .title {
+  justify-self: start;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  white-space: pre-wrap;
+  cursor: pointer;
+}
+.card .title:hover,
+.card .title:focus-visible {
+  text-decoration: underline;
 }
 .card .top {
   display: flex;
@@ -1237,6 +1264,10 @@ body.graph-panning .graph-svg {
 .account-list {
   display: grid;
   gap: 2px;
+  /* About five and a half rows, so a long list scrolls in its box instead of stretching the row. */
+  max-height: 232px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .account-row {
   display: grid;
@@ -1306,6 +1337,7 @@ body.graph-panning .graph-svg {
   background: var(--main);
   border: 1px solid var(--line);
   border-radius: 10px;
+  overflow-wrap: anywhere;
   width: min(560px, 100%);
   max-height: calc(100% - 16px);
   /* Only the body scrolls, so the title and the footer's Save stay in view. */
@@ -1315,7 +1347,8 @@ body.graph-panning .graph-svg {
 }
 .modal-body {
   min-height: 0;
-  overflow: auto;
+  /* Vertical only. Long words wrap below, so nothing needs to scroll sideways. */
+  overflow: hidden auto;
   overscroll-behavior: contain;
 }
 .modal.wide {
@@ -1337,6 +1370,7 @@ body.graph-panning .graph-svg {
 .modal .content {
   padding: 16px;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
   align-content: start;
   min-width: 0;
@@ -1373,6 +1407,14 @@ body.graph-panning .graph-svg {
   grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
   gap: 16px;
 }
+/* An artifact's facts beside its media. Its one column never grows past the window. */
+.detail-info {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  align-content: start;
+  min-width: 0;
+}
 .preview {
   border-radius: 8px;
   overflow: hidden;
@@ -1405,6 +1447,11 @@ body.graph-panning .graph-svg {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
+  /* Fixed columns, so a long reason wraps inside its cell instead of widening the table. */
+  table-layout: fixed;
+}
+.dates th:first-child {
+  width: 34%;
 }
 .dates th,
 .dates td {

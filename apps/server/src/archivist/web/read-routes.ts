@@ -30,19 +30,15 @@ import type { Auth } from "./auth.js";
 type Query = Record<string, unknown>;
 type ArchiveParams = { archiveId: string };
 
-const STATUSES = ["needed", "resolved", "unrecoverable"] as const;
+const STATUSES = ["needed", "unrecoverable"] as const;
 const ENTITY_KINDS: EntityKind[] = ["character", "account", "server", "channel"];
 
 function status(value: unknown): (typeof STATUSES)[number] | undefined {
   if (value === undefined || value === "") return undefined;
   if (!STATUSES.includes(value as (typeof STATUSES)[number])) {
-    throw new ArchivistError(
-      "invalid_input",
-      "Status must be needed, resolved, or unrecoverable.",
-      {
-        field: "status",
-      },
-    );
+    throw new ArchivistError("invalid_input", "Status must be needed or unrecoverable.", {
+      field: "status",
+    });
   }
   return value as (typeof STATUSES)[number];
 }

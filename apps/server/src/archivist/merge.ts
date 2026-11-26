@@ -214,7 +214,7 @@ export function mergeCharacters(
       { table: "characters", id: survivor.id, version: survivor.version + 1 },
       { table: "characters", id: merged.id, state: "absent" },
     ],
-    apply(target) {
+    apply(target, during) {
       // An introduction between the two would become someone introducing themselves.
       target
         .prepare(
@@ -252,7 +252,7 @@ export function mergeCharacters(
         );
       target.prepare("DELETE FROM characters WHERE id = ?").run(merged.id);
       pruneDates(target);
-      syncGaps(target, now, actor.userId);
+      syncGaps(target, now, actor.userId, during);
     },
     append: [logEntry(context, actor, "character", survivor.id, changes)],
     removeRecords: [{ record: "character", id: merged.id }],

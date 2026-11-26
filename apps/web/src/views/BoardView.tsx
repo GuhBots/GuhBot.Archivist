@@ -4,6 +4,8 @@ import { ArtifactChooser, type ChosenArtifact } from "../components/ArtifactChoo
 import { TO_FILL_IN } from "../components/quick-create.js";
 import { useCharacters } from "../components/use-names.js";
 import { shortId } from "../format.js";
+import { AccountModal } from "../modals/AccountModal.js";
+import { PRIORITIES, RequestModal } from "../modals/RequestModal.js";
 import { characterPath, navigate, placePath } from "../router.js";
 import { useWindows } from "../Shell.js";
 import { loadLocal, saveLocal, useArchive } from "../state.js";
@@ -12,10 +14,11 @@ import { AddMenu } from "../components/AddMenu.js";
 import { ViewFrame } from "./ViewFrame.js";
 
 /**
- * The research board: what the archive is missing, in Needed, Resolved, and
- * Unrecoverable. Gap cards follow the data and clear by themselves when the
- * information is added. Missing-media requests resolve when a contributor
- * links the artifact that has the media. Nobody is assigned anything.
+ * The research board: what the archive is still missing, in Needed and
+ * Unrecoverable. Nothing records what was found or done. A missing-media
+ * request that is found is deleted, as is a research card once it is done,
+ * and a gap card is deleted by itself when the information is added.
+ * Selecting a card opens it for editing. Nobody is assigned anything.
  */
 
 type Show = "all" | "requests" | "gaps";
@@ -23,7 +26,6 @@ type Status = RequestDetails["status"];
 
 const BUCKETS: [Status, string][] = [
   ["needed", "Needed"],
-  ["resolved", "Resolved"],
   ["unrecoverable", "Unrecoverable"],
 ];
 
@@ -45,6 +47,14 @@ const GAP_TEXT: Partial<Record<GapCard["kind"], string>> = {
   account_character: "This account is not linked to a character. Link it from a character's page.",
   undated: "No exact, estimated, or file date.",
   missing_evidence: "No supporting artifacts.",
+};
+
+const SUBJECT_NAMES: Record<GapCard["subject"]["kind"], string> = {
+  artifact: "artifact",
+  account: "account",
+  event: "event",
+  character: "character",
+  server: "place",
 };
 
 type Item =
@@ -147,9 +157,9 @@ export function BoardView() {
         <>
           <h1>Research board</h1>
           <span className="meta">
-            A backlog of what is missing. Gaps clear by themselves when the information is added,
-            and a request resolves when you link the artifact that has it. Nobody is assigned
-            anything.
+            What the archive is still missing. Select a card to edit it. Gaps clear by themselves
+            when the information is added, and a request is deleted once it is found. Nobody is
+            assigned anything.
           </span>
         </>
       }
@@ -205,19 +215,47 @@ export function BoardView() {
 
 type Run = (action: () => Promise<unknown>, done: string) => Promise<boolean>;
 
+/**
+ * Opens a card's window when the card itself is selected. Its own buttons,
+ * such as a character chip, keep their action.
+ */
+function openUnlessControl(open: () => void) {
+  return (event: React.MouseEvent) => {
+    if ((event.target as Element).closest("button, a, input, select, textarea")) return;
+    open();
+  };
+}
+
 function RequestCard(props: { request: RequestDetails; run: Run }) {
   const { archive, revision } = useArchive();
   const windows = useWindows();
   const characters = useCharacters(archive.archiveId, revision);
   const { request, run } = props;
-  const url = `/api/archives/${archive.archiveId}/requests/${request.id}/status`;
+  const url = `/api/archives/${archive.archiveId}/requests/${request.id}`;
+  const edit = () => windows.show(<RequestModal key={request.id} request={request} />);
+  const found = () =>
+    windows.show(
+      <ConfirmModal
+        title={`Found: ${request.label}`}
+        text="Finding it deletes the request and its edit history. Nothing records that it was found."
+        action="Found it, delete the request"
+        onConfirm={() =>
+          run(
+            () => api(`${url}?expectedVersion=${request.version}`, { method: "DELETE" }),
+            "Found. The request is deleted.",
+          )
+        }
+      />,
+    );
   return (
-    <article className="card">
+    <article className="card" onClick={openUnlessControl(edit)}>
       <div className="top">
         <span className="kind">Missing media</span>
         <span className={`prio ${request.priority}`}>{request.priority.toUpperCase()}</span>
       </div>
-      <strong>{request.description}</strong>
+      <button className="title" type="button" onClick={edit}>
+        {request.description}
+      </button>
       <span className="when">{request.wording}</span>
       <div className="chips">
         {request.characters.map((id) => {
@@ -244,88 +282,131 @@ function RequestCard(props: { request: RequestDetails; run: Run }) {
       {request.status === "unrecoverable" && request.unrecoverableReason ? (
         <span className="hint">Why: {request.unrecoverableReason}</span>
       ) : null}
-      {request.foundArtifacts.map((id) => (
-        <button
-          key={id}
-          className="linkish"
-          style={{ textAlign: "left" }}
-          type="button"
-          onClick={() => windows.openArtifact(id)}
-        >
-          Found in artifact {shortId(id)}
-        </button>
-      ))}
       <div className="acts">
+        <button className="btn" type="button" onClick={found}>
+          {request.status === "needed" ? "Found it" : "Found it after all"}
+        </button>
         {request.status === "needed" ? (
-          <>
-            <button
-              className="btn"
-              type="button"
-              onClick={() => windows.show(<ResolveModal request={request} />)}
-            >
-              Link the artifact that has it
-            </button>
-            <button
-              className="btn ghost"
-              type="button"
-              onClick={() =>
-                windows.show(
-                  <ReasonModal
-                    title={`Can't be found: ${request.label}`}
-                    hint="Unrecoverable means it is still missing. You can reopen it later."
-                    action="Move to Unrecoverable"
-                    onSubmit={(reason) =>
-                      run(
-                        () =>
-                          api(url, {
-                            method: "POST",
-                            json: {
-                              expectedVersion: request.version,
-                              status: "unrecoverable",
-                              unrecoverableReason: reason,
-                            },
-                          }),
-                        "Moved to Unrecoverable.",
-                      )
-                    }
-                  />,
-                )
-              }
-            >
-              Can't be found
-            </button>
-          </>
+          <button
+            className="btn ghost"
+            type="button"
+            onClick={() =>
+              windows.show(
+                <ReasonModal
+                  title={`Can't be found: ${request.label}`}
+                  hint="Unrecoverable means it is still missing. You can reopen it later."
+                  action="Move to Unrecoverable"
+                  onSubmit={(reason) =>
+                    run(
+                      () =>
+                        api(`${url}/status`, {
+                          method: "POST",
+                          json: {
+                            expectedVersion: request.version,
+                            status: "unrecoverable",
+                            unrecoverableReason: reason,
+                          },
+                        }),
+                      "Moved to Unrecoverable.",
+                    )
+                  }
+                />,
+              )
+            }
+          >
+            Can't be found
+          </button>
         ) : (
-          <>
-            {request.status === "unrecoverable" ? (
-              <button
-                className="btn"
-                type="button"
-                onClick={() => windows.show(<ResolveModal request={request} />)}
-              >
-                Found it after all
-              </button>
-            ) : null}
-            <button
-              className="btn ghost"
-              type="button"
-              onClick={() =>
-                run(
-                  () =>
-                    api(url, {
-                      method: "POST",
-                      json: { expectedVersion: request.version, status: "needed" },
-                    }),
-                  "Moved back to Needed. The description and date stay the same.",
-                )
-              }
-            >
-              Reopen
-            </button>
-          </>
+          <button
+            className="btn ghost"
+            type="button"
+            onClick={() =>
+              run(
+                () =>
+                  api(`${url}/status`, {
+                    method: "POST",
+                    json: { expectedVersion: request.version, status: "needed" },
+                  }),
+                "Moved back to Needed. The description and date stay the same.",
+              )
+            }
+          >
+            Reopen
+          </button>
         )}
       </div>
     </article>
+  );
+}
+
+/** What a gap card is called, such as "No date" or "To fill in". */
+function gapLabel(card: GapCard): string {
+  return card.kind === "custom" && card.field === TO_FILL_IN ? "To fill in" : GAP_LABELS[card.kind];
+}
+
+/** Opens the record a card is about, where the missing information is filled in. */
+function useOpenSubject(card: GapCard): (() => void) | null {
+  const { archive } = useArchive();
+  const windows = useWindows();
+  const { subject } = card;
+  switch (subject.kind) {
+    case "artifact":
+      return () => windows.openArtifact(subject.id);
+    case "event":
+      return () => windows.openEvent(subject.id);
+    case "account":
+      return () => windows.show(<AccountModal accountId={subject.id} />);
+    case "character":
+      return () => {
+        windows.close();
+        navigate(characterPath(archive.archiveId, subject.id));
+      };
+    case "server":
+      return () => {
+        windows.close();
+        navigate(placePath(archive.archiveId, subject.id));
+      };
+    default:
+      return null;
+  }
+}
+
+/** Asks for the reason Unrecoverable needs, then moves the card there. */
+function cantBeFound(card: GapCard, url: string, run: Run) {
+  return (
+    <ReasonModal
+      title={`Can't be found: ${card.subject.label}`}
+      hint="Unrecoverable means it is still missing. You can reopen it later."
+      action="Move to Unrecoverable"
+      initial={card.reason ?? ""}
+      onSubmit={(reason) =>
+        run(
+          () =>
+            api(url, {
+              method: "PATCH",
+              json: { expectedVersion: card.version, status: "unrecoverable", reason },
+            }),
+          "Moved to Unrecoverable.",
+        )
+      }
+    />
+  );
+}
+
+/** Confirms that a manual card is done, which deletes it. */
+function markDone(card: GapCard, url: string, run: Run) {
+  return (
+    <ConfirmModal
+      title={`Done: ${card.subject.label}`}
+      text="Marking it done deletes the card and its edit history. Nothing records that it was done."
+      action="Mark done"
+      onConfirm={() =>
+        run(
+          () => api(`${url}?expectedVersion=${card.version}`, { method: "DELETE" }),
+          "Done. The card is deleted.",
+        )
+      }
+    />
   );
 }
 
@@ -335,47 +416,22 @@ function GapCardView(props: { card: GapCard; run: Run }) {
   const { card, run } = props;
   const url = `/api/archives/${archive.archiveId}/backlog/${card.id}`;
   const manual = !card.derived;
-  const { subject } = card;
-  const open =
-    subject.kind === "artifact"
-      ? () => windows.openArtifact(subject.id)
-      : subject.kind === "event"
-        ? () => windows.openEvent(subject.id)
-        : subject.kind === "character"
-          ? () => navigate(characterPath(archive.archiveId, subject.id))
-          : subject.kind === "server"
-            ? () => navigate(placePath(archive.archiveId, subject.id))
-            : null;
-  const move = (status: Status, done: string, reason?: string) =>
-    run(
-      () =>
-        api(url, {
-          method: "PATCH",
-          json: { expectedVersion: card.version, status, reason },
-        }),
-      done,
-    );
+  const edit = () => windows.show(<GapCardModal key={card.id} card={card} run={run} />);
   const text = manual ? card.reason : GAP_TEXT[card.kind];
   return (
-    <article className="card">
+    <article className="card" onClick={openUnlessControl(edit)}>
       <div className="top">
-        <span className="kind">
-          {card.kind === "custom" && card.field === TO_FILL_IN
-            ? "To fill in"
-            : GAP_LABELS[card.kind]}
-        </span>
+        <span className="kind">{gapLabel(card)}</span>
         <span className={`prio ${card.priority}`}>{card.priority.toUpperCase()}</span>
       </div>
-      {open ? (
-        <button className="linkish" style={{ textAlign: "left" }} type="button" onClick={open}>
-          {subject.label}
-        </button>
-      ) : (
-        <strong>{subject.label}</strong>
-      )}
+      <button className="title" type="button" onClick={edit}>
+        {card.subject.label}
+      </button>
       {text ? <span className="hint">{text}</span> : null}
-      {card.status === "unrecoverable" && !manual && card.reason ? (
-        <span className="hint">Why: {card.reason}</span>
+      {!manual && card.reason ? (
+        <span className="hint">
+          {card.status === "unrecoverable" ? "Why" : "Notes"}: {card.reason}
+        </span>
       ) : null}
       {card.status === "needed" && !manual ? (
         <span className="hint">Clears by itself when the information is added.</span>
@@ -385,18 +441,27 @@ function GapCardView(props: { card: GapCard; run: Run }) {
           <button
             className="btn ghost"
             type="button"
-            onClick={() => move("resolved", "Marked done.")}
+            onClick={() => windows.show(markDone(card, url, run))}
           >
             Mark done
           </button>
         </div>
       ) : null}
-      {card.status === "unrecoverable" || (card.status === "resolved" && manual) ? (
+      {card.status === "unrecoverable" ? (
         <div className="acts">
           <button
             className="btn ghost"
             type="button"
-            onClick={() => move("needed", "Moved back to Needed.")}
+            onClick={() =>
+              run(
+                () =>
+                  api(url, {
+                    method: "PATCH",
+                    json: { expectedVersion: card.version, status: "needed" },
+                  }),
+                "Moved back to Needed.",
+              )
+            }
           >
             Reopen
           </button>
@@ -406,15 +471,188 @@ function GapCardView(props: { card: GapCard; run: Run }) {
   );
 }
 
+/**
+ * A gap card's window: its priority and notes, a way to open the record and
+ * fill in what is missing, and its moves. A manual card's reason says what
+ * to research, so it cannot be left empty.
+ */
+function GapCardModal(props: { card: GapCard; run: Run }) {
+  const { archive } = useArchive();
+  const windows = useWindows();
+  const { card, run } = props;
+  const url = `/api/archives/${archive.archiveId}/backlog/${card.id}`;
+  const manual = !card.derived;
+  const openSubject = useOpenSubject(card);
+  const [priority, setPriority] = useState(card.priority);
+  const [reason, setReason] = useState(card.reason ?? "");
+  const [busy, setBusy] = useState(false);
+  const unchanged = priority === card.priority && reason.trim() === (card.reason ?? "");
+  const needsReason = manual || card.status === "unrecoverable";
+  const save = async () => {
+    setBusy(true);
+    const ok = await run(
+      () =>
+        api(url, {
+          method: "PATCH",
+          json: { expectedVersion: card.version, priority, reason: reason.trim() || null },
+        }),
+      "Saved the card.",
+    );
+    setBusy(false);
+    if (ok) windows.close();
+  };
+  return (
+    <Modal
+      title={`${gapLabel(card)}: ${card.subject.label}`}
+      onClose={windows.close}
+      footer={
+        <>
+          {card.status === "needed" && manual ? (
+            <button
+              className="btn ghost"
+              type="button"
+              onClick={() => windows.show(markDone(card, url, run))}
+            >
+              Mark done
+            </button>
+          ) : null}
+          {card.status === "needed" ? (
+            <button
+              className="btn ghost"
+              type="button"
+              onClick={() => windows.show(cantBeFound(card, url, run))}
+            >
+              Can't be found
+            </button>
+          ) : (
+            <button
+              className="btn ghost"
+              type="button"
+              disabled={busy}
+              onClick={async () => {
+                if (
+                  await run(
+                    () =>
+                      api(url, {
+                        method: "PATCH",
+                        json: { expectedVersion: card.version, status: "needed" },
+                      }),
+                    "Moved back to Needed.",
+                  )
+                )
+                  windows.close();
+              }}
+            >
+              Reopen
+            </button>
+          )}
+          <button
+            className="btn primary"
+            type="button"
+            disabled={unchanged || busy || (needsReason && !reason.trim())}
+            onClick={save}
+          >
+            Save
+          </button>
+        </>
+      }
+    >
+      <div className="content">
+        {!manual ? (
+          <p className="hint" style={{ margin: 0 }}>
+            {GAP_TEXT[card.kind]} This card clears by itself once that is filled in.
+          </p>
+        ) : null}
+        {openSubject ? (
+          <button
+            className="btn"
+            type="button"
+            style={{ justifySelf: "start" }}
+            onClick={openSubject}
+          >
+            Open the {SUBJECT_NAMES[card.subject.kind]} to fill it in
+          </button>
+        ) : null}
+        <div className="grid2">
+          <label className="field">
+            <span>Priority</span>
+            <select
+              value={priority}
+              onChange={(event) => setPriority(event.target.value as GapCard["priority"])}
+            >
+              {PRIORITIES.map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <label className="field">
+          <span>
+            {card.status === "unrecoverable"
+              ? "Why it can't be found"
+              : manual
+                ? "What to research"
+                : "Notes (optional)"}
+          </span>
+          <textarea value={reason} onChange={(event) => setReason(event.target.value)} />
+        </label>
+      </div>
+    </Modal>
+  );
+}
+
+/** Confirms a change that cannot be undone, such as deleting a found request. */
+function ConfirmModal(props: {
+  title: string;
+  text: string;
+  action: string;
+  onConfirm(): Promise<boolean>;
+}) {
+  const windows = useWindows();
+  const [busy, setBusy] = useState(false);
+  return (
+    <Modal
+      title={props.title}
+      onClose={windows.close}
+      footer={
+        <>
+          <button className="btn ghost" type="button" onClick={windows.close}>
+            Cancel
+          </button>
+          <button
+            className="btn danger"
+            type="button"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              if (await props.onConfirm()) windows.close();
+              setBusy(false);
+            }}
+          >
+            {props.action}
+          </button>
+        </>
+      }
+    >
+      <div className="content">
+        <p style={{ margin: 0 }}>{props.text}</p>
+      </div>
+    </Modal>
+  );
+}
+
 /** Asks for the reason a move needs, such as why something can't be found. */
 function ReasonModal(props: {
   title: string;
   hint: string;
   action: string;
+  initial?: string;
   onSubmit(reason: string): Promise<boolean>;
 }) {
   const windows = useWindows();
-  const [reason, setReason] = useState("");
+  const [reason, setReason] = useState(props.initial ?? "");
   const [busy, setBusy] = useState(false);
   return (
     <Modal
@@ -448,65 +686,6 @@ function ReasonModal(props: {
         <p className="hint" style={{ margin: 0 }}>
           {props.hint}
         </p>
-      </div>
-    </Modal>
-  );
-}
-
-function ResolveModal(props: { request: RequestDetails }) {
-  const { archive, changed, toast } = useArchive();
-  const windows = useWindows();
-  const [found, setFound] = useState<ChosenArtifact | null>(null);
-  const [error, setError] = useState<unknown>(null);
-  const [busy, setBusy] = useState(false);
-  const submit = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      await api(`/api/archives/${archive.archiveId}/requests/${props.request.id}/status`, {
-        method: "POST",
-        json: {
-          expectedVersion: props.request.version,
-          status: "resolved",
-          foundArtifacts: [found!.id],
-        },
-      });
-      changed();
-      toast("Resolved. The request keeps its own description and date.");
-      windows.close();
-    } catch (failure) {
-      setError(failure);
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <Modal
-      title={`Found: ${props.request.label}`}
-      onClose={windows.close}
-      footer={
-        <>
-          <button className="btn ghost" type="button" onClick={windows.close}>
-            Cancel
-          </button>
-          <button className="btn primary" type="button" disabled={!found || busy} onClick={submit}>
-            Link and resolve
-          </button>
-        </>
-      }
-    >
-      <div className="content">
-        <p className="hint" style={{ margin: 0 }}>
-          Linking the artifact that has it resolves the request. The request keeps its own
-          description and date.
-        </p>
-        <ArtifactChooser
-          archiveId={archive.archiveId}
-          label="Found in"
-          value={found}
-          onChange={setFound}
-        />
-        <ErrorNote error={error} />
       </div>
     </Modal>
   );

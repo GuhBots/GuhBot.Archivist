@@ -286,7 +286,7 @@ export function ArtifactModal(props: { id: string; nav?: Nav }) {
               }}
             />
           ) : (
-            <div style={{ display: "grid", gap: 10, alignContent: "start" }}>
+            <div className="detail-info">
               <p style={{ margin: 0, whiteSpace: "pre-wrap" }}>{artifact.description}</p>
               <dl className="kv">
                 <dt>Characters</dt>

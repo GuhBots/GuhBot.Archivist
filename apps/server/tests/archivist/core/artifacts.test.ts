@@ -384,36 +384,6 @@ test("deleting an artifact keeps its media and removes only its own log lines", 
   );
 });
 
-test("deleting a resolved request's last found artifact reopens it", async (t) => {
-  const fixture = setup(t);
-  const artifact = await addArtifact(fixture);
-  const store = fixture.context.stores.get(fixture.archiveId)!;
-  store.db
-    .prepare(
-      `INSERT INTO research_requests (id, created_at, created_by, updated_at, description, constraint_kind, start_day, status)
-       VALUES ('r1', 'now', ?, 'now', 'The beach trip photos', 'approximate_day', '2019-07-15', 'resolved')`,
-    )
-    .run(MEMBER.userId);
-  store.db
-    .prepare("INSERT INTO request_artifacts (request_id, artifact_id) VALUES ('r1', ?)")
-    .run(artifact.id);
-
-  deleteArtifact(fixture.context, MEMBER, {
-    archiveId: fixture.archiveId,
-    id: artifact.id,
-    expectedVersion: 1,
-  });
-  assert.deepEqual(
-    store.db.prepare("SELECT status, version, start_day FROM research_requests").get(),
-    {
-      status: "needed",
-      version: 2,
-      start_day: "2019-07-15",
-    },
-  );
-  assert.deepEqual(log(fixture).at(-1)?.changes.status, { old: "resolved", new: "needed" });
-});
-
 test("linked characters, accounts, servers, and channels cannot be deleted until unlinked", async (t) => {
   const fixture = setup(t);
   const archiveId = fixture.archiveId;

@@ -43,7 +43,7 @@ export function formatEntries(entries: readonly LogEntry[]): string {
     .join("");
 }
 
-function refKey(ref: RecordRef): string {
+export function refKey(ref: RecordRef): string {
   return `${ref.record}\u0000${ref.id}`;
 }
 

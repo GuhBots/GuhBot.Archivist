@@ -55,13 +55,13 @@ An event chooses where it happened in the same single field as an artifact. Char
 
 File fields are dashed boxes: choose a file or drop one on the box, and the chosen file shows on the line below. The media picker lists every accepted extension as well as the image, video, and audio types, because some systems type an Ogg file, such as a Discord voice message, as `application/ogg`. `src/components/FileDrop.tsx` holds the list. The server still checks each file's real format.
 
-Windows scroll only their body, so the footer with Save stays in view. On a character's page, changed facts show their Save in a row that stays at the bottom of the window.
+Windows scroll only their body, and only vertically, so the footer with Save stays in view. Long words and file names wrap instead of widening the window. On a character's page, changed facts show their Save in a row that stays at the bottom of the window.
 
 A file with no date inside it takes one from its name, such as `IMG_20190715_183012.jpg`, and otherwise from when the uploader's computer last changed it, which the add-artifact form sends. The artifact window names where its file date came from. A time typed without a zone is read in the contributor's timezone, or the archive's, and the field shows how it reads. There is no confirmation step.
 
 ## Characters and Accounts
 
-A character's page lists their accounts in one section, each with its picture, name, and whether it is the main account. Selecting one opens the account's window, `src/modals/AccountModal.tsx`, with its picture, Discord ID, names, avatars, memberships, details, and Delete. When the service has `DISCORD_BOT_TOKEN`, an account with a Discord ID can fetch its current avatar, and adding an account with a Discord ID fetches it at once.
+A character's page lists their accounts in one section, each with its picture, name, and whether it is the main account. A long list scrolls inside its box. Selecting one opens the account's window, `src/modals/AccountModal.tsx`, with its picture, Discord ID, names, avatars, memberships, details, and Delete. When the service has `DISCORD_BOT_TOKEN`, an account with a Discord ID can fetch its current avatar, and adding an account with a Discord ID fetches it at once.
 
 Every dated history entry, such as an alias, main account, introduction, account name, avatar, membership, or server name or icon, has Edit beside Remove while editing, to change its name or fill in an unknown date. `src/components/History.tsx` holds these rows.
 
@@ -71,7 +71,7 @@ Characters, accounts, servers, channels, and group chats are deleted from their 
 
 ## Timeline
 
-Drag or scroll to move, and hold Ctrl while scrolling to zoom. The ruler names days at day zoom and months otherwise, with months or years on a second row. The period at the left edge is always named, so a scrolled view shows which month or year it is in. The tray's Legend button explains the dot shades, dashed outlines, arrows, and event strips. Today centers the timeline on today's date in the archive's timezone.
+Drag or scroll to move, and hold Ctrl while scrolling to zoom. Each dot counts a lane's artifacts in a day, week, or month, depending on the zoom, and sits on their average day, as an arrow sits on its event's day, so the two read in the right order at every zoom. Dots that would overlap are moved apart. The ruler names days at day zoom and months otherwise, with months or years on a second row. The period at the left edge is always named, so a scrolled view shows which month or year it is in. The tray's Legend button explains the dot shades, dashed outlines, arrows, and event strips. Today centers the timeline on today's date in the archive's timezone.
 
 ## Album
 
@@ -95,7 +95,7 @@ Pointing at a character lights up their connections. Selecting one focuses it an
 
 ## Board
 
-The research board lists missing-media requests and gap cards in Needed, Resolved, and Unrecoverable, highest priority first. Gap cards that follow the data clear by themselves. Date-research flags are marked done by hand. A request moves to Unrecoverable with a reason, resolves when a contributor links the artifact that has the media, including from Unrecoverable, and can be reopened. The tray adds a request, flags an artifact's date for research, and shows all cards, only requests, or only gaps. Nobody is assigned anything.
+The research board lists missing-media requests and gap cards in Needed and Unrecoverable, highest priority first. It keeps only what is still missing, so nothing records what was found or done. Selecting a request opens `src/modals/RequestModal.tsx`, which edits its description, dates, characters, events, priority, and notes in either bucket, and deletes it. Found it deletes a request, also from Unrecoverable, after a confirmation. A request moves to Unrecoverable with a reason and can be reopened. Gap cards that follow the data are deleted by themselves when the information is added. Selecting a gap card opens its priority and notes, and a button that opens the artifact, event, account, character, or place to fill in what is missing. Date-research flags and "to fill in" cards are marked done by hand, which deletes them. Cards keep their column's width, and long titles wrap. The tray adds a request, flags an artifact's date for research, and shows all cards, only requests, or only gaps. Nobody is assigned anything.
 
 ## Character Page
 

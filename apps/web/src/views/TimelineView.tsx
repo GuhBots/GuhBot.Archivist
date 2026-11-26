@@ -74,6 +74,42 @@ function laneIcon(lane: TimelineLane, day: string): string | null {
 
 const textWidth = (text: string, px = 6.7) => text.length * px;
 
+/**
+ * How close two dot centers may be. Dots are 16 pixels wide, so neighbors may
+ * overlap a little and each stays visible with its count readable. Keeping
+ * them fully apart would pull year-zoom dots, about 21 pixels per month,
+ * back toward the middle of their months, away from their real days.
+ */
+const DOT_SPACING = 12;
+
+/**
+ * Moves sorted positions apart until neighbors are at least `gap` apart,
+ * keeping their order and moving each as little as it can. A run of
+ * positions that would overlap is centered on its own average, so a dot is
+ * moved only where it would otherwise hide another.
+ */
+function spreadApart(ideal: readonly number[], gap: number): number[] {
+  const runs: { count: number; sum: number }[] = [];
+  const span = (run: { count: number; sum: number }) => ({
+    first: run.sum / run.count - ((run.count - 1) * gap) / 2,
+    last: run.sum / run.count + ((run.count - 1) * gap) / 2,
+  });
+  for (const position of ideal) {
+    runs.push({ count: 1, sum: position });
+    while (runs.length > 1) {
+      const last = runs.at(-1)!;
+      const before = runs.at(-2)!;
+      if (span(last).first - span(before).last >= gap) break;
+      before.count += last.count;
+      before.sum += last.sum;
+      runs.pop();
+    }
+  }
+  return runs.flatMap((run) =>
+    Array.from({ length: run.count }, (_, i) => span(run).first + i * gap),
+  );
+}
+
 export function TimelineView() {
   const { archive, filters, revision, position, setPosition } = useArchive();
   const windows = useWindows();
@@ -352,8 +388,14 @@ export function TimelineView() {
         );
       }
     }
-    for (const dot of lane.dots) {
-      const cx = x((dayNumber(dot.start) + dayNumber(dot.end)) / 2);
+    // A dot sits on its artifacts' average day, as an arrow sits on its day, so
+    // their order reads right at every zoom. Only dots that would overlap move.
+    const dotX = spreadApart(
+      lane.dots.map((dot) => x(dayNumber(dot.day))),
+      DOT_SPACING,
+    );
+    for (const [di, dot] of lane.dots.entries()) {
+      const cx = dotX[di]!;
       if (cx < LABEL_W - 10 || cx > width + 10) continue;
       const tier = dot.count >= 7 ? 4 : dot.count >= 4 ? 3 : dot.count >= 2 ? 2 : 1;
       const label = `${dot.count} artifact${dot.count > 1 ? "s" : ""}, ${periodLabel(dot.start)}${dot.uncertain ? ", some dates uncertain" : ""}`;

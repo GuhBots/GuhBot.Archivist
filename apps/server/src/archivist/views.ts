@@ -81,8 +81,13 @@ export interface TimelineLane {
   icons: { mediaId: string; day: string | null }[];
   /** Stretches of activity whose gaps are at most the archive's lane gap. Dashed when no date in it is exact. */
   segments: { start: string; end: string; uncertain: boolean }[];
-  /** One dot per bucket with artifacts, darker with more. Dashed when any date in it is not exact. */
-  dots: { start: string; end: string; count: number; uncertain: boolean }[];
+  /**
+   * One dot per bucket with artifacts, darker with more. Dashed when any date
+   * in it is not exact. `day` is the average of its artifacts' days, where
+   * the dot belongs, so a month's dot sits after an event earlier that month
+   * rather than in the middle of the month.
+   */
+  dots: { start: string; end: string; day: string; count: number; uncertain: boolean }[];
   /** Single-day events, and the server's or group chat's name and icon changes. */
   arrows: TimelineArrow[];
 }
@@ -298,20 +303,27 @@ export function timelineView(
     days.set(day, (days.get(day) ?? false) || exact);
     activity.set(lane, days);
   };
-  const dots = new Map<string, { count: number; uncertain: boolean }>();
+  const dots = new Map<string, { count: number; uncertain: boolean; daySum: number }>();
   for (const row of artifactLaneRows(db, input.filters)) {
     if (!byId.has(row.lane)) continue;
     note(row.lane, row.day, row.exact === 1);
     if (row.day < fromDay || row.day > toDay) continue;
     const key = `${row.lane}|${bucketStart(row.day, bucket)}`;
-    const dot = dots.get(key) ?? { count: 0, uncertain: false };
+    const dot = dots.get(key) ?? { count: 0, uncertain: false, daySum: 0 };
     dot.count += 1;
     dot.uncertain ||= row.exact !== 1;
+    dot.daySum += dayNumber(row.day);
     dots.set(key, dot);
   }
-  for (const [key, dot] of dots) {
+  for (const [key, { count, uncertain, daySum }] of dots) {
     const [lane, start] = key.split("|") as [string, string];
-    byId.get(lane)!.dots.push({ start, end: bucketEnd(start, bucket), ...dot });
+    byId.get(lane)!.dots.push({
+      start,
+      end: bucketEnd(start, bucket),
+      day: dayText(Math.round(daySum / count)),
+      count,
+      uncertain,
+    });
   }
 
   const events = filteredEvents(db, input.eventFilters);

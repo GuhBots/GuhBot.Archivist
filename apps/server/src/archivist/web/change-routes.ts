@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { deleteArtifact, updateArtifact } from "../artifacts.js";
-import { flagForResearch, updateGapCard } from "../board.js";
+import { deleteGapCard, flagForResearch, updateGapCard } from "../board.js";
 import type { Actor, ArchivistContext } from "../context.js";
 import {
   archiveDay,
@@ -64,7 +64,7 @@ function entityKind(value: string): EntityKind {
 }
 
 /** Fields a request edit may not carry, because moving between buckets has its own route. */
-const STATUS_FIELDS = ["status", "foundArtifacts", "unrecoverableReason"];
+const STATUS_FIELDS = ["status", "unrecoverableReason"];
 
 export function registerChangeRoutes(
   scope: FastifyInstance,
@@ -268,7 +268,7 @@ export function registerChangeRoutes(
     } as Parameters<typeof updateRequest>[2]);
   });
 
-  // Needed, Resolved with the artifacts that have the media, or Unrecoverable with a reason.
+  // Needed, or Unrecoverable with a reason. A request that is found is deleted.
   scope.post<{ Params: Params }>(`${base}/requests/:id/status`, async (request) => {
     const body = bodyOf(request);
     return updateRequest(context, await actorOf(request), {
@@ -276,7 +276,6 @@ export function registerChangeRoutes(
       id: request.params.id,
       expectedVersion: body.expectedVersion,
       status: body.status,
-      foundArtifacts: body.foundArtifacts,
       unrecoverableReason: body.unrecoverableReason,
     });
   });
@@ -307,6 +306,16 @@ export function registerChangeRoutes(
       id: request.params.id,
     } as Parameters<typeof updateGapCard>[2]),
   );
+
+  // A finished manual card is deleted, since the board keeps only what is still missing.
+  scope.delete<{ Params: Params }>(`${base}/backlog/:id`, async (request, reply) => {
+    deleteGapCard(context, await actorOf(request), {
+      archiveId: request.params.archiveId,
+      id: request.params.id,
+      expectedVersion: expectedVersionOf(request),
+    });
+    return reply.status(204).send();
+  });
 
   /* Dates */
 

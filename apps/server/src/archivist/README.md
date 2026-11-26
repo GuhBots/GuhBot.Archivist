@@ -28,8 +28,8 @@ This directory came from `src/archivist/` in GuhBot.Discord, at commits `d4b46a8
 | `entities.ts` | Creating, editing, and deleting characters, accounts, servers, and channels, with stale-edit checks and reference blockers |
 | `history.ts` | Dated history edited through its parent record (aliases, names, avatars, icons, main accounts, ownership, bot owners, memberships, server owners, introductions), and lookups of what applied on a day, such as a character's picture |
 | `events.ts` | Events with a single day, a duration, or an occurrence window, exact or estimated, with colors, disputed reasons, links, and deletion blocked by anchored requests |
-| `requests.ts` | Missing-media requests with five temporal forms, required characters, event anchors that follow corrections, and Needed, Resolved, and Unrecoverable buckets |
-| `board.ts` | The research board's gap cards: derived cards kept in step with the data, and manual date-research and custom flags |
+| `requests.ts` | Missing-media requests with five temporal forms, required characters, event anchors that follow corrections, and Needed and Unrecoverable buckets. A found request is deleted |
+| `board.ts` | The research board's gap cards: derived cards kept in step with the data and deleted once filled, and manual date-research and custom flags deleted once done |
 | `merge.ts` | Explicit character merge: a preview of conflicts and links, the contributor's choices, alias preservation, and link reassignment |
 | `palette.ts` | Colors assigned to new servers, channels, and events |
 | `download.ts` | Bounded downloads with size, stall, and overall limits, allowed-host redirects, and retries |

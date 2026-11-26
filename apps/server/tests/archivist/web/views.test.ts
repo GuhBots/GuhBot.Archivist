@@ -221,9 +221,11 @@ test("the timeline returns lanes with activity stretches, shaded dots, arrows, t
   const main = view.lanes.at(-1)!;
   assert.equal(main.id, hangout.id);
   assert.equal(main.isMain, true);
+  // Each dot sits at the average of its artifacts' days, Aug 3 and Aug 20 here, so the
+  // Launch arrow on Aug 3 is drawn before it rather than after the middle of August.
   assert.deepEqual(main.dots, [
-    { start: "2019-08-01", end: "2019-08-31", count: 2, uncertain: false },
-    { start: "2020-06-01", end: "2020-06-30", count: 1, uncertain: true },
+    { start: "2019-08-01", end: "2019-08-31", day: "2019-08-12", count: 2, uncertain: false },
+    { start: "2020-06-01", end: "2020-06-30", day: "2020-06-15", count: 1, uncertain: true },
   ]);
   // A gap over 90 days splits the lane; a stretch with only estimated dates is dashed.
   assert.deepEqual(main.segments, [

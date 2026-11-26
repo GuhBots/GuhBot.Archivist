@@ -7,7 +7,7 @@ import { cardsOf, syncGaps } from "./board.js";
 import { ArchivistError } from "./errors.js";
 import { discordId, newId, requiredText, TEXT_LIMITS, timestamp } from "./fields.js";
 import { insertMediaRow, mediaPaths, placeStagedMedia, type StagedMedia } from "./media.js";
-import { commitMutation, type Expectation } from "./mutations.js";
+import { commitMutation } from "./mutations.js";
 import { resolveShortId } from "./lookup.js";
 import { getDateOrder, inputTimeZone } from "./preferences.js";
 import {
@@ -441,7 +441,7 @@ export function createArtifact(
     expectations: [{ table: "artifacts", id: artifactId, state: "present" }],
     newFiles: [paths.original, ...(paths.preview ? [paths.preview] : [])],
     placeFiles: () => placeStagedMedia(store.folder, media, paths),
-    apply(db) {
+    apply(db, during) {
       insertMediaRow(db, mediaId, paths, media, now);
       const exactId = exact ? insertDate(db, exact.value, timezone) : null;
       const estimateId = estimate ? insertDate(db, estimate.value, timezone) : null;
@@ -473,7 +473,7 @@ export function createArtifact(
         exactId ?? estimateId ?? fileId,
       );
       insertLinks(db, artifactId, links);
-      syncGaps(db, now, actor.userId);
+      syncGaps(db, now, actor.userId, during);
     },
     append: [logEntry(context, actor, "artifact", artifactId, changes)],
     // Queues the upload announcement once the artifact is saved, and again on recovery
@@ -624,7 +624,7 @@ export function updateArtifact(
   const now = timestamp(context.now());
   commitMutation(store, {
     expectations: [{ table: "artifacts", id, version: current.version + 1 }],
-    apply(db) {
+    apply(db, during) {
       const row = db
         .prepare(
           "SELECT exact_date_id, exact_basis, estimated_date_id, estimate_reason, file_date_id FROM artifacts WHERE id = ?",
@@ -673,7 +673,7 @@ export function updateArtifact(
       }
       insertLinks(db, id, additions);
       pruneDates(db);
-      syncGaps(db, now, actor.userId);
+      syncGaps(db, now, actor.userId, during);
     },
     append: [logEntry(context, actor, "artifact", id, changes)],
   });
@@ -683,8 +683,6 @@ export function updateArtifact(
 /**
  * Permanently deletes an artifact. Its links, derived research cards, and own
  * log lines are removed. Its original file and preview stay in the archive.
- * A resolved missing-media request that loses its last found artifact
- * returns to Needed.
  */
 export function deleteArtifact(
   context: ArchivistContext,
@@ -699,41 +697,14 @@ export function deleteArtifact(
   if (!current) throw notFoundRecord("artifact");
   if (current.version !== expectedVersion) throw staleVersion("artifact", id, current.version, {});
 
-  const reopened = store.db
-    .prepare(
-      `SELECT r.id, r.version FROM research_requests r
-       JOIN request_artifacts ra ON ra.request_id = r.id
-       WHERE ra.artifact_id = ? AND r.status = 'resolved'
-         AND (SELECT count(*) FROM request_artifacts x WHERE x.request_id = r.id) = 1`,
-    )
-    .all(id) as { id: string; version: number }[];
   const now = timestamp(context.now());
-  const expectations: Expectation[] = [
-    { table: "artifacts", id, state: "absent" },
-    ...reopened.map((request) => ({
-      table: "research_requests" as const,
-      id: request.id,
-      version: request.version + 1,
-    })),
-  ];
-
   commitMutation(store, {
-    expectations,
-    apply(db) {
+    expectations: [{ table: "artifacts", id, state: "absent" }],
+    apply(db, during) {
       db.prepare("DELETE FROM artifacts WHERE id = ?").run(id);
-      const reopen = db.prepare(
-        "UPDATE research_requests SET status = 'needed', version = version + 1, updated_at = ? WHERE id = ?",
-      );
-      for (const request of reopened) reopen.run(now, request.id);
       pruneDates(db);
-      syncGaps(db, now, actor.userId);
+      syncGaps(db, now, actor.userId, during);
     },
-    append: reopened.map((request) =>
-      logEntry(context, actor, "request", request.id, {
-        status: { old: "resolved", new: "needed" },
-        foundArtifacts: { old: [id], new: [] },
-      }),
-    ),
     removeRecords: [
       { record: "artifact", id },
       ...cardsOf(store.db, "artifact", id).map((card) => ({ record: "gap", id: card })),

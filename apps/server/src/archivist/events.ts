@@ -283,7 +283,7 @@ export function createEvent(
   }
   commitMutation(store, {
     expectations: [{ table: "events", id, state: "present" }],
-    apply(db) {
+    apply(db, during) {
       const startId = insertDate(db, dates.start, timezone);
       const endId = dates.end ? insertDate(db, dates.end, timezone) : null;
       db.prepare(
@@ -305,7 +305,7 @@ export function createEvent(
         color,
       );
       insertLinks(db, id, links);
-      syncGaps(db, now, actor.userId);
+      syncGaps(db, now, actor.userId, during);
     },
     append: [logEntry(context, actor, "event", id, changes)],
   });
@@ -448,7 +448,7 @@ export function updateEvent(
   const timezone = session.details.timezone;
   commitMutation(store, {
     expectations: [{ table: "events", id, version: current.version + 1 }],
-    apply(target) {
+    apply(target, during) {
       let startId = current.start.id;
       let endId = current.end?.id ?? null;
       if (dates && (changes.start || changes.end || changes.dateKind || changes.certainty)) {
@@ -481,7 +481,7 @@ export function updateEvent(
       }
       insertLinks(target, id, additions);
       pruneDates(target);
-      syncGaps(target, now, actor.userId);
+      syncGaps(target, now, actor.userId, during);
     },
     append: [logEntry(context, actor, "event", id, changes)],
   });
@@ -530,10 +530,10 @@ export function deleteEvent(
   const now = timestamp(context.now());
   commitMutation(store, {
     expectations: [{ table: "events", id, state: "absent" }],
-    apply(target) {
+    apply(target, during) {
       target.prepare("DELETE FROM events WHERE id = ?").run(id);
       pruneDates(target);
-      syncGaps(target, now, actor.userId);
+      syncGaps(target, now, actor.userId, during);
     },
     removeRecords: [
       { record: "event", id },

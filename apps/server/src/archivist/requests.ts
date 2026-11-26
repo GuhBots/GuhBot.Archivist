@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import type { Priority } from "./board.js";
+import { type Priority, priorityValue } from "./board.js";
 import type { Actor, ArchivistContext } from "./context.js";
 import { dayText, parseDayInput } from "./dates.js";
 import type { FieldChange } from "./edit-log.js";
@@ -22,9 +22,9 @@ import { expectedVersionValue, staleVersion } from "./versions.js";
 /**
  * Missing-media requests: something the archive should have but nobody has
  * found yet. A request needs a description, at least one character, and one
- * temporal constraint. Requests start Needed, may move to Unrecoverable with
- * a reason, and are Resolved by linking the artifact that has it. There are
- * no assignees.
+ * temporal constraint. Requests start Needed and may move to Unrecoverable
+ * with a reason and back. A request that is found is deleted, because the
+ * archive keeps only what is still missing. There are no assignees.
  *
  * A request anchored to an event stores the event, not a copied day, so it
  * follows corrections to the event's dates, and the event cannot be deleted
@@ -34,7 +34,7 @@ import { expectedVersionValue, staleVersion } from "./versions.js";
 
 export type ConstraintKind =
   "approximate_day" | "date_range" | "before_date" | "before_event" | "after_event";
-export type RequestStatus = "needed" | "resolved" | "unrecoverable";
+export type RequestStatus = "needed" | "unrecoverable";
 
 export interface ConstraintInput {
   kind: unknown;
@@ -86,7 +86,6 @@ export interface RequestDetails {
   unrecoverableReason: string | null;
   characters: string[];
   events: string[];
-  foundArtifacts: string[];
 }
 
 interface RequestRow {
@@ -109,7 +108,6 @@ interface RequestRow {
 const LINKS = {
   characters: { table: "request_characters", column: "character_id", target: "characters" },
   events: { table: "request_events", column: "event_id", target: "events" },
-  foundArtifacts: { table: "request_artifacts", column: "artifact_id", target: "artifacts" },
 } as const;
 type LinkKind = keyof typeof LINKS;
 
@@ -193,7 +191,6 @@ export function readRequest(db: Database.Database, id: string): RequestDetails |
     unrecoverableReason: row.unrecoverable_reason,
     characters: linkIds(db, "characters", row.id),
     events: linkIds(db, "events", row.id),
-    foundArtifacts: linkIds(db, "foundArtifacts", row.id),
   };
 }
 
@@ -253,14 +250,6 @@ function constraintValue(
         anchorEventId: resolveShortId(db, "events", input!.eventId, "event"),
       };
   }
-}
-
-function priorityValue(value: unknown): Priority {
-  if (value === "critical" || value === "high" || value === "medium" || value === "low")
-    return value;
-  throw new ArchivistError("invalid_input", "Priority must be critical, high, medium, or low.", {
-    field: "priority",
-  });
 }
 
 function constraintState(db: Database.Database, constraint: Constraint): string {
@@ -392,9 +381,8 @@ export interface UpdateRequestInput {
   removeCharacters?: unknown;
   addEvents?: unknown;
   removeEvents?: unknown;
-  /** Bucket moves. Resolved needs found artifacts, Unrecoverable a reason. */
+  /** Bucket moves. Unrecoverable needs a reason. */
   status?: unknown;
-  foundArtifacts?: unknown;
   unrecoverableReason?: unknown;
 }
 
@@ -407,7 +395,6 @@ interface EditableRequest {
   characters: string[];
   events: string[];
   status: RequestStatus;
-  foundArtifacts: string[];
   unrecoverableReason: string | null;
   [key: string]: unknown;
 }
@@ -420,15 +407,13 @@ const LOGGED = [
   "characters",
   "events",
   "status",
-  "foundArtifacts",
   "unrecoverableReason",
 ] as const;
 
 /**
- * Edits a request or moves it between buckets. Resolving links at least one
- * artifact, also from Unrecoverable. Unrecoverable needs a reason. Reopening
- * returns it to Needed and drops the found links, keeping its description
- * and date as they were.
+ * Edits a request or moves it between buckets. Unrecoverable needs a reason.
+ * Reopening returns it to Needed, keeping its description and date as they
+ * were. A request that is found is deleted with `deleteRequest`.
  */
 export function updateRequest(
   context: ArchivistContext,
@@ -450,7 +435,6 @@ export function updateRequest(
     characters: current.characters,
     events: current.events,
     status: current.status,
-    foundArtifacts: current.foundArtifacts,
     unrecoverableReason: current.unrecoverableReason,
   };
   const after: EditableRequest = { ...before };
@@ -493,16 +477,11 @@ export function updateRequest(
   if (input.status !== undefined) {
     const status = input.status;
     if (status === "resolved") {
-      const found = idList("foundArtifacts", input.foundArtifacts);
-      requireRecords(db, "artifacts", "foundArtifacts", found);
-      after.foundArtifacts = [...new Set([...before.foundArtifacts, ...found])].sort();
-      if (after.foundArtifacts.length === 0) {
-        throw new ArchivistError("invalid_input", "Link the artifact where it was found.", {
-          field: "foundArtifacts",
-        });
-      }
-      after.status = "resolved";
-      after.unrecoverableReason = null;
+      throw new ArchivistError(
+        "invalid_input",
+        "A request that is found is deleted rather than kept. Delete it instead.",
+        { field: "status" },
+      );
     } else if (status === "unrecoverable") {
       if (before.status !== "needed") {
         throw new ArchivistError(
@@ -521,14 +500,11 @@ export function updateRequest(
       );
     } else if (status === "needed") {
       after.status = "needed";
-      after.foundArtifacts = [];
       after.unrecoverableReason = null;
     } else {
-      throw new ArchivistError(
-        "invalid_input",
-        "Status must be needed, resolved, or unrecoverable.",
-        { field: "status" },
-      );
+      throw new ArchivistError("invalid_input", "Status must be needed or unrecoverable.", {
+        field: "status",
+      });
     }
   }
 
@@ -565,7 +541,7 @@ export function updateRequest(
           id,
           current.version,
         );
-      for (const kind of ["characters", "events", "foundArtifacts"] as const) {
+      for (const kind of ["characters", "events"] as const) {
         if (!changes[kind]) continue;
         const { table, column } = LINKS[kind];
         target.prepare(`DELETE FROM ${table} WHERE request_id = ?`).run(id);
@@ -578,7 +554,7 @@ export function updateRequest(
   return readRequest(db, id)!;
 }
 
-/** Permanently deletes a request and its own log lines. */
+/** Permanently deletes a request and its own log lines, such as once it is found. */
 export function deleteRequest(
   context: ArchivistContext,
   actor: Actor,
